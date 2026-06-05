@@ -1,2 +1,4 @@
-litellm==1.82.3
+# GateMid dependencies
+# Python >=3.10 (headroom-ai requirement), <=3.13 (PyO3 constraint)
+litellm==1.82.3  # pinned to match headroom-ai 0.23.0 strict dependency
 headroom-ai==0.23.0
