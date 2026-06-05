@@ -13,7 +13,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY litellm_config.yaml .
+COPY litellm_config.yaml gatemid_callbacks.py .
 
 EXPOSE 4000
 

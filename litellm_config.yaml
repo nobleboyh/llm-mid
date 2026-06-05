@@ -39,7 +39,7 @@ model_list:
 litellm_settings:
   drop_params: true
   callbacks:
-    - headroom.integrations.litellm_callback.HeadroomCallback
+    - gatemid_callbacks.HeadroomCallback
 
 general_settings:
   master_key: "os.environ/GATEWAY_MASTER_KEY"
