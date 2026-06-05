@@ -276,6 +276,34 @@ curl -s http://localhost:4000/v1/models -H "Authorization: Bearer sk-local-dev-k
 
 ---
 
+## Dashboard
+
+LiteLLM ships a built-in admin UI for monitoring spend, viewing logs, managing keys, and checking model health.
+
+### Access the dashboard
+
+```bash
+open http://localhost:4000/ui/
+```
+
+Login with your master key: `sk-local-dev-key` (or whatever you set `GATEWAY_MASTER_KEY` to).
+
+### What you can monitor
+
+| Feature | Description |
+|---|---|
+| **Usage & Spend** | Track token usage and cost per model, per API key |
+| **Logs** | View every request/response passing through the gateway |
+| **Model Health** | See which models are healthy, latency, error rates |
+| **API Keys** | Create and manage keys for team members |
+| **Rate Limits** | Set RPM/TPM limits per key or model |
+
+### Dashboard screenshot
+
+The UI shows real-time metrics at `http://localhost:4000/ui/`. Open it in your browser while the gateway is running — it updates live as requests flow through.
+
+---
+
 ## Architecture
 
 This project uses LiteLLM's native callback system. Zero custom Python application code — the integration is pure configuration:
