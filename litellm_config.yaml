@@ -1,0 +1,45 @@
+# GateMid — Team Smart Router + Headroom Compression
+# LiteLLM Proxy Configuration
+
+model_list:
+  # Tier 1: Fast / Simple models
+  - model_name: gemini-flash
+    litellm_params:
+      model: gemini/gemini-2.5-flash
+      api_key: "os.environ/GEMINI_API_KEY"
+
+  - model_name: deepseek-flash
+    litellm_params:
+      model: deepseek/deepseek-v4-flash
+      api_key: "os.environ/DEEPSEEK_API_KEY"
+
+  # Tier 2: Capable / Complex models
+  - model_name: gemini-pro
+    litellm_params:
+      model: gemini/gemini-2.5-pro
+      api_key: "os.environ/GEMINI_API_KEY"
+
+  - model_name: deepseek-pro
+    litellm_params:
+      model: deepseek/deepseek-v4-pro
+      api_key: "os.environ/DEEPSEEK_API_KEY"
+
+  # Team Smart Router — auto-classifies and routes
+  - model_name: team-smart-router
+    litellm_params:
+      model: auto_router/complexity_router
+      complexity_router_config:
+        tiers:
+          SIMPLE: gemini-flash
+          MEDIUM: deepseek-flash
+          COMPLEX: gemini-pro
+          REASONING: deepseek-pro
+      complexity_router_default_model: deepseek-flash
+
+litellm_settings:
+  drop_params: true
+  callbacks:
+    - headroom.integrations.litellm_callback.HeadroomCallback
+
+general_settings:
+  master_key: "os.environ/GATEWAY_MASTER_KEY"
