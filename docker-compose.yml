@@ -1,0 +1,14 @@
+services:
+  gatemid:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "4000:4000"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - GATEWAY_MASTER_KEY=${GATEWAY_MASTER_KEY:-sk-local-dev-key}
+    volumes:
+      - ./litellm_config.yaml:/app/litellm_config.yaml:ro
+    restart: unless-stopped
