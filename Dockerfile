@@ -17,4 +17,4 @@ COPY litellm_config.yaml gatemid_callbacks.py .
 
 EXPOSE 4000
 
-ENTRYPOINT ["litellm", "--config", "/app/litellm_config.yaml", "--port", "4000"]
+ENTRYPOINT ["litellm", "--config", "/app/litellm_config.yaml", "--port", "4000", "--debug"]

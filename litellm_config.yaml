@@ -30,10 +30,27 @@ model_list:
       model: auto_router/complexity_router
       complexity_router_config:
         tiers:
-          SIMPLE: gemini-flash
+          SIMPLE: deepseek-flash
           MEDIUM: deepseek-flash
-          COMPLEX: gemini-pro
+          COMPLEX: deepseek-pro
           REASONING: deepseek-pro
+        # Claude Code sends ~500+ tokens of system prompt per request.
+        # Defaults are tuned for standalone prompts, not agentic tools.
+        token_thresholds:
+          simple: 100        # below 100 tokens → penalize as too simple
+          complex: 2000      # above 2000 tokens → boost complexity (was 400)
+        dimension_weights:
+          tokenCount: 0.05       # reduce — system prompt always adds tokens
+          codePresence: 0.10     # reduce — system prompt has "let", "api", etc.
+          reasoningMarkers: 0.30  # keep — user-written, reliable signal
+          technicalTerms: 0.10   # reduce — system prompt has technical words
+          simpleIndicators: 0.15  # boost — helps classify greetings correctly
+          multiStepPatterns: 0.05
+          questionComplexity: 0.05
+        tier_boundaries:
+          simple_medium: 0.20       # higher threshold to reach MEDIUM
+          medium_complex: 0.45      # higher threshold to reach COMPLEX
+          complex_reasoning: 0.65   # higher threshold to reach REASONING
       complexity_router_default_model: deepseek-flash
 
 litellm_settings:
