@@ -1,0 +1,2 @@
+litellm==1.82.3
+headroom-ai==0.23.0
