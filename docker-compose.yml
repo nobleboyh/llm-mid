@@ -17,6 +17,8 @@ services:
       DEEPSEEK_API_KEY:     ${DEEPSEEK_API_KEY}
       # Gateway
       GATEWAY_MASTER_KEY:   ${GATEWAY_MASTER_KEY:-sk-local-dev-key}
+      # Hugging Face token (speeds up model downloads)
+      HF_TOKEN:             ${HF_TOKEN:-}
     volumes:
       - ./litellm_config.yaml:/app/litellm_config.yaml:ro
     healthcheck:
