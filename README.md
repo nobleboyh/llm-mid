@@ -268,30 +268,6 @@ See [LiteLLM Proxy docs](https://docs.litellm.ai/docs/proxy/configs) and [Headro
 
 ---
 
-## Dashboard
-
-LiteLLM ships a built-in admin UI for monitoring spend, viewing logs, managing keys, and checking model health.
-
-### Access the dashboard
-
-```bash
-open http://localhost:4000/ui/
-```
-
-Login with your master key: `sk-local-dev-key` (or whatever you set `GATEWAY_MASTER_KEY` to).
-
-### What you can monitor
-
-| Feature | Description |
-|---|---|
-| **Usage & Spend** | Track token usage and cost per model, per API key |
-| **Logs** | View every request/response passing through the gateway |
-| **Model Health** | See which models are healthy, latency, error rates |
-| **API Keys** | Create and manage keys for team members |
-| **Rate Limits** | Set RPM/TPM limits per key or model |
-
----
-
 ## Troubleshooting
 
 ### Gateway fails to start
