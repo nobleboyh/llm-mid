@@ -1,14 +1,27 @@
+# docker-compose.yml
+
 services:
-  gatemid:
+
+  # ── GateMid: LiteLLM Proxy + Headroom ASGI middleware (same process) ──────
+  litellm:
     build:
-      context: .
+      context: ./proxy
       dockerfile: Dockerfile
+    container_name: gatemid-headroom
+    restart: unless-stopped
     ports:
       - "4000:4000"
     environment:
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
-      - GATEWAY_MASTER_KEY=${GATEWAY_MASTER_KEY:-sk-local-dev-key}
+      # Provider keys
+      GEMINI_API_KEY:       ${GEMINI_API_KEY}
+      DEEPSEEK_API_KEY:     ${DEEPSEEK_API_KEY}
+      # Gateway
+      GATEWAY_MASTER_KEY:   ${GATEWAY_MASTER_KEY:-sk-local-dev-key}
     volumes:
       - ./litellm_config.yaml:/app/litellm_config.yaml:ro
-    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f -H \"Authorization: Bearer $${GATEWAY_MASTER_KEY:-sk-local-dev-key}\" http://localhost:4000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s

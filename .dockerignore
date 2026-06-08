@@ -21,10 +21,6 @@ build/
 # Git
 .git/
 
-# Docker
-Dockerfile
-docker-compose.yml
-
 # OS
 .DS_Store
 Thumbs.db

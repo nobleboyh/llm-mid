@@ -1,11 +1,37 @@
 # GateMid — AI Gateway Middleware
 
-Local-dev AI gateway combining [Headroom](https://github.com/chopratejas/headroom) context compression with [LiteLLM](https://github.com/BerriAI/litellm) auto-routing.
+Local-dev AI gateway combining [Headroom](https://github.com/chopratejas/headroom) context compression (ASGI middleware) with [LiteLLM](https://github.com/BerriAI/litellm) auto-routing.
 
 **What it does:**
 - Compresses prompts before they reach the LLM (60-95% token savings)
 - Automatically routes queries to the right model by complexity
 - Drop-in proxy — works with Claude Code, Open Code, and any OpenAI-compatible SDK
+
+---
+
+## Architecture
+
+```
+Claude Code / Application
+      │  HTTP :4000
+      ▼
+┌─────────────────────────────────────────────┐
+│  LiteLLM Proxy (Python process)             │
+│                                             │
+│  ASGI Middleware Stack (inbound):           │
+│    1. Headroom CompressionMiddleware        │
+│       ├─ SmartCrusher  (JSON)               │
+│       ├─ CodeCompressor (AST)               │
+│       └─ CacheAligner  (KV cache prefix)    │
+│    2. ComplexityRouter (auto-tier)          │
+│    3. Provider dispatch                     │
+└─────────────────────────────────────────────┘
+      │  HTTPS (outbound to provider)
+      ▼
+Gemini / DeepSeek API
+```
+
+Headroom now runs as **ASGI middleware** (`proxy/startup.py`) instead of the old callback approach — more reliable, fires at HTTP level on every request.
 
 ---
 
@@ -73,8 +99,8 @@ claude (CLI)
   │  ANTHROPIC_BASE_URL → GateMid (:4000)
   ▼
 GateMid (LiteLLM Proxy)
-  │  1. ComplexityRouter classifies prompt
-  │  2. HeadroomCallback compresses context
+  │  1. Headroom ASGI middleware compresses context
+  │  2. ComplexityRouter classifies prompt
   │  3. LiteLLM translates Anthropic → Gemini/Deepseek format
   │  4. Routes to resolved model
   ▼
@@ -203,6 +229,9 @@ response = client.chat.completions.create(
 Incoming prompt
       │
       ▼
+Headroom ASGI Middleware (~20ms)
+      │  SmartCrusher (JSON), CodeCompressor (AST), CacheAligner (KV cache)
+      ▼
 ComplexityRouter (sub-millisecond, local)
       │
       ├─ SIMPLE    → gemini-flash     (greetings, definitions, yes/no)
@@ -210,9 +239,6 @@ ComplexityRouter (sub-millisecond, local)
       ├─ COMPLEX   → gemini-pro       (code, architecture, technical)
       └─ REASONING → deepseek-pro     (step-by-step, analysis, debugging)
       │
-      ▼
-HeadroomCallback
-      │  SmartCrusher (JSON), CodeCompressor (AST), Kompress-Base (prose)
       ▼
 Compressed prompt → Provider API
 ```
@@ -231,48 +257,14 @@ GATEMID_URL=http://localhost:4000 pytest tests/ -v
 
 ## Configuration
 
-Edit `litellm_config.yaml` to adjust:
-
-- **Model tiers** — which model handles each complexity level
-- **Router thresholds** — how aggressive the classification is
-- **Compression settings** — target ratio, protected content
+| File | Purpose |
+|------|---------|
+| `litellm_config.yaml` | Model routing, complexity router, provider config |
+| `proxy/startup.py` | Headroom ASGI middleware registration |
+| `docker-compose.yml` | Single-service Docker deployment |
+| `.env` | Provider API keys (never commit) |
 
 See [LiteLLM Proxy docs](https://docs.litellm.ai/docs/proxy/configs) and [Headroom docs](https://headroom-docs.vercel.app/) for all options.
-
----
-
-## Troubleshooting
-
-### Gateway fails to start
-
-Check the logs:
-
-```bash
-docker compose logs gatemid
-```
-
-Common issues:
-- **Missing API keys**: Ensure `.env` has valid `GEMINI_API_KEY` and `DEEPSEEK_API_KEY`
-- **Port conflict**: Port 4000 already in use? Change `docker-compose.yml` ports mapping
-- **Docker build fails**: Ensure Docker Desktop is running and you have internet access for pip
-
-### Claude Code can't connect
-
-```bash
-# Verify the gateway is reachable
-curl -s http://localhost:4000/health -H "Authorization: Bearer sk-local-dev-key"
-
-# Check your env vars are set
-echo $ANTHROPIC_BASE_URL
-echo $ANTHROPIC_API_KEY
-```
-
-### Open Code can't connect
-
-```bash
-# Verify the OpenAI-compatible endpoint
-curl -s http://localhost:4000/v1/models -H "Authorization: Bearer sk-local-dev-key"
-```
 
 ---
 
@@ -298,16 +290,37 @@ Login with your master key: `sk-local-dev-key` (or whatever you set `GATEWAY_MAS
 | **API Keys** | Create and manage keys for team members |
 | **Rate Limits** | Set RPM/TPM limits per key or model |
 
-### Dashboard screenshot
-
-The UI shows real-time metrics at `http://localhost:4000/ui/`. Open it in your browser while the gateway is running — it updates live as requests flow through.
-
 ---
 
-## Architecture
+## Troubleshooting
 
-This project uses LiteLLM's native callback system. Zero custom Python application code — the integration is pure configuration:
+### Gateway fails to start
 
-- **ComplexityRouter** (`litellm.router_strategy.complexity_router`): Rule-based prompt classification (<1ms, local)
-- **HeadroomCallback** (`headroom.integrations.litellm_callback`): Context compression hook (SmartCrusher + CodeCompressor + Kompress-Base)
-- **LiteLLM Proxy**: API server, auth, provider abstraction, format translation (Anthropic ↔ OpenAI ↔ Gemini ↔ Deepseek)
+Check the logs:
+
+```bash
+docker compose logs litellm
+```
+
+Common issues:
+- **Missing API keys**: Ensure `.env` has valid `GEMINI_API_KEY` and `DEEPSEEK_API_KEY`
+- **Port conflict**: Port 4000 already in use? Change `docker-compose.yml` ports mapping
+- **Docker build fails**: Ensure Docker Desktop is running and you have internet access for pip
+
+### Claude Code can't connect
+
+```bash
+# Verify the gateway is reachable
+curl -s http://localhost:4000/health -H "Authorization: Bearer sk-local-dev-key"
+
+# Check your env vars are set
+echo $ANTHROPIC_BASE_URL
+echo $ANTHROPIC_API_KEY
+```
+
+### Open Code can't connect
+
+```bash
+# Verify the OpenAI-compatible endpoint
+curl -s http://localhost:4000/v1/models -H "Authorization: Bearer sk-local-dev-key"
+```

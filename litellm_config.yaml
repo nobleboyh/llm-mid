@@ -1,5 +1,8 @@
 # GateMid — Team Smart Router + Headroom Compression
 # LiteLLM Proxy Configuration
+#
+# Headroom runs as ASGI middleware (proxy/startup.py), not via callbacks.
+# No callback config needed — middleware fires at HTTP level on every request.
 
 model_list:
   # Tier 1: Fast / Simple models
@@ -55,8 +58,8 @@ model_list:
 
 litellm_settings:
   drop_params: true
-  callbacks:
-    - gatemid_callbacks.HeadroomCallback
+  # Headroom is now ASGI middleware (proxy/startup.py) — no callbacks needed.
+  # Middleware fires at HTTP level, more reliable than callback hooks.
 
 general_settings:
   master_key: "os.environ/GATEWAY_MASTER_KEY"
