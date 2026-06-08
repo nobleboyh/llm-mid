@@ -6,13 +6,29 @@ in-process before handing off to the normal server launch.
 import logging
 import sys
 
-# Ensure Headroom compression stats appear in docker logs.
-# The middleware logs at INFO but the default effective level is WARNING.
-for name in ("headroom", "headroom.integrations", "headroom.integrations.asgi"):
+# ── Logging setup ────────────────────────────────────────────────────────────
+# Set up a uniform handler shared by all loggers we care about.
+_handler = logging.StreamHandler(sys.stdout)
+_handler.setLevel(logging.INFO)
+_handler.setFormatter(logging.Formatter(
+    "%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
+    datefmt="%H:%M:%S",
+))
+
+
+def _setup_logger(name: str, level: int = logging.INFO):
+    """Ensure *name* logger writes to stdout at *level*."""
     l = logging.getLogger(name)
-    l.setLevel(logging.INFO)
-    if not l.handlers:
-        l.addHandler(logging.StreamHandler(sys.stdout))
+    l.setLevel(level)
+    l.handlers.clear()
+    l.addHandler(_handler)
+    l.propagate = False
+
+
+# Headroom compression stats — middleware logs at INFO but the default
+# effective level is WARNING.
+for name in ("headroom", "headroom.integrations", "headroom.integrations.asgi"):
+    _setup_logger(name)
 
 logger = logging.getLogger("headroom.startup")
 
@@ -63,6 +79,34 @@ sys.modules["headroom.compress"].compress = _patched_compress
 
 # 1. Register Headroom ASGI middleware on the LiteLLM FastAPI app
 from litellm.proxy.proxy_server import app
+
+# ── LiteLLM logging (set after litellm is imported) ─────────────────────
+# We need only the complexity router's routing decision per request, not the
+# noisy "LiteLLM completion() model=..." or "ageneric_api_call_with_fallbacks"
+# lines from other LiteLLM internals.
+import litellm._logging as _llm_logging
+
+
+class _ComplexityRouterFilter(logging.Filter):
+    """Only passes lines with the complexity router's routing decision."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "ComplexityRouter:" in record.getMessage()
+
+
+_llm_logging.verbose_router_logger.addFilter(_ComplexityRouterFilter())
+_llm_logging.verbose_router_logger.setLevel(logging.INFO)
+_llm_logging.verbose_router_logger.handlers.clear()
+_llm_logging.verbose_router_logger.addHandler(_handler)
+_llm_logging.verbose_router_logger.propagate = False
+
+# Suppress generic litellm logger ("completion()" lines) and proxy logger
+# ("SESSION REUSE" noise).
+_llm_logging.verbose_logger.setLevel(logging.WARNING)
+_llm_logging.verbose_proxy_logger.setLevel(logging.WARNING)
+
+logger.info("LiteLLM verbose loggers reconfigured for stdout")
+
 from headroom.integrations.asgi import CompressionMiddleware
 
 app.add_middleware(
