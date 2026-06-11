@@ -10,8 +10,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# entrypoint registers Headroom ASGI middleware then starts LiteLLM
+# entrypoint registers Headroom ASGI middleware + guardrails, then starts LiteLLM
 COPY entrypoint.py .
+COPY guardrails ./guardrails/
 
 # litellm_config.yaml is bind-mounted at runtime so it can be edited
 # without rebuilding the image

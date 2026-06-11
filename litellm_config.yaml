@@ -2,7 +2,7 @@
 # LiteLLM Proxy Configuration
 #
 # Headroom runs as ASGI middleware (proxy/startup.py), not via callbacks.
-# No callback config needed — middleware fires at HTTP level on every request.
+# Middleware fires at HTTP level, more reliable than callback hooks.
 
 model_list:
   # Tier 1: Fast / Simple models
@@ -60,6 +60,7 @@ litellm_settings:
   drop_params: true
   # Headroom is now ASGI middleware (proxy/startup.py) — no callbacks needed.
   # Middleware fires at HTTP level, more reliable than callback hooks.
+  # No callbacks configured — Headroom uses ASGI middleware instead.
 
 general_settings:
   master_key: "os.environ/GATEWAY_MASTER_KEY"

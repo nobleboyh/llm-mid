@@ -27,7 +27,13 @@ def _setup_logger(name: str, level: int = logging.INFO):
 
 # Headroom compression stats — middleware logs at INFO but the default
 # effective level is WARNING.
-for name in ("headroom", "headroom.integrations", "headroom.integrations.asgi"):
+for name in (
+    "headroom",
+    "headroom.integrations",
+    "headroom.integrations.asgi",
+    "proxy.guardrails",
+    "guardrails",
+):
     _setup_logger(name)
 
 logger = logging.getLogger("headroom.startup")
@@ -107,6 +113,15 @@ _llm_logging.verbose_proxy_logger.setLevel(logging.WARNING)
 
 logger.info("LiteLLM verbose loggers reconfigured for stdout")
 
+# 1a. Register API Key masking guardrail (BEFORE CompressionMiddleware)
+from guardrails.api_key_masking import ApiKeyMaskingMiddleware
+
+app.add_middleware(ApiKeyMaskingMiddleware)
+
+logger.info("ApiKeyMaskingMiddleware registered — masking API keys in "
+            "request/response bodies")
+
+# 1b. Register Headroom compression middleware
 from headroom.integrations.asgi import CompressionMiddleware
 
 app.add_middleware(
