@@ -246,8 +246,7 @@ class ApiKeyMaskingMiddleware:
                     "body": full_body,
                     "more_body": False,
                 }
-            result: MutableMapping[str, Any] = await receive()
-            return result
+            return {"type": "http.disconnect"}
 
         # ── Buffer and optionally mask response body ────────────────────────
         # For non-streaming responses we buffer all chunks, mask, then forward.
@@ -266,8 +265,12 @@ class ApiKeyMaskingMiddleware:
                 ct = headers.get(b"content-type", b"").decode().lower()
                 if "text/event-stream" in ct or "text/plain" in ct:
                     is_streaming = True
-                # Forward headers immediately (no masking needed)
-                await send(message)
+                # Strip Content-Length — body size may change after masking
+                filtered_headers = [
+                    (k, v) for k, v in (message.get("headers", []) or [])
+                    if k.lower() != b"content-length"
+                ]
+                await send({**message, "headers": filtered_headers})
 
             elif message["type"] == "http.response.body":
                 chunk = message.get("body", b"")
