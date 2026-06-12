@@ -268,6 +268,45 @@ See [LiteLLM Proxy docs](https://docs.litellm.ai/docs/proxy/configs) and [Headro
 
 ---
 
+## Scoring & Evaluation
+
+GateMid scores LLM responses asynchronously using [Ragas](https://docs.ragas.io/) and stores results in Redis.
+
+### View scores
+
+```bash
+# Top 20 best and worst calls across all categories
+docker exec gatemid-headroom python -m eval.score_view
+
+# Top 10 worst FHIR query calls
+docker exec gatemid-headroom python -m eval.score_view --category fhir_query --n 10
+
+# Filter by prompt version
+docker exec gatemid-headroom python -m eval.score_view --prompt-id v2_system_prompt
+
+# JSON output (pipe to a file for analysis)
+docker exec gatemid-headroom python -m eval.score_view --json
+```
+
+### Clear Redis data for a fresh test
+
+```bash
+# Remove all eval:* keys (surgical — queues, scores, metadata)
+docker exec gatemid-headroom python eval/clear_redis.py
+
+# Nuclear option — wipes ALL keys in the Redis DB
+docker exec gatemid-headroom python eval/clear_redis.py --hard
+```
+
+The script also exports a Python function for programmatic use:
+
+```python
+from eval.redis_store import flush_eval
+flush_eval()  # returns count of deleted keys
+```
+
+---
+
 ## Troubleshooting
 
 ### Gateway fails to start

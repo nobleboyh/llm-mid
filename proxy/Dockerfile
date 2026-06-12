@@ -15,6 +15,7 @@ COPY entrypoint.py .
 COPY guardrails ./guardrails/
 COPY __init__.py ./proxy/
 COPY callback.py ./proxy/
+COPY capture_original.py ./proxy/
 
 # litellm_config.yaml is bind-mounted at runtime so it can be edited
 # without rebuilding the image

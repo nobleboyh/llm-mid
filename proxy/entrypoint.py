@@ -115,15 +115,16 @@ _llm_logging.verbose_proxy_logger.setLevel(logging.WARNING)
 
 logger.info("LiteLLM verbose loggers reconfigured for stdout")
 
-# 1a. Register API Key masking guardrail (BEFORE CompressionMiddleware)
-from guardrails.api_key_masking import ApiKeyMaskingMiddleware
+# Middleware registration order (last registered = outermost, runs first):
+#
+#   Inbound:  ApiKeyMasking → CaptureOriginal → Compression → LiteLLM
+#   Outbound: LiteLLM → Compression → CaptureOriginal → ApiKeyMasking
+#
+# ApiKeyMasking is outermost so API keys are sanitized before any other
+# middleware reads or logs the body. CaptureOriginal runs second so it
+# captures the raw question before Headroom compresses messages.
 
-app.add_middleware(ApiKeyMaskingMiddleware)
-
-logger.info("ApiKeyMaskingMiddleware registered — masking API keys in "
-            "request/response bodies")
-
-# 1b. Register Headroom compression middleware
+# 1a. Register Headroom compression middleware (innermost — runs last inbound)
 from headroom.integrations.asgi import CompressionMiddleware
 
 app.add_middleware(
@@ -134,6 +135,22 @@ app.add_middleware(
 
 logger.info("Headroom CompressionMiddleware registered on LiteLLM proxy "
             "(compress_user_messages=True, local mode)")
+
+# 1b. Register Original Question capture middleware (middle — runs second inbound)
+from proxy.capture_original import CaptureOriginalQuestionMiddleware
+
+app.add_middleware(CaptureOriginalQuestionMiddleware)
+
+logger.info("CaptureOriginalQuestionMiddleware registered — capturing raw "
+            "question before compression")
+
+# 1c. Register API Key masking guardrail (outermost — runs first inbound)
+from guardrails.api_key_masking import ApiKeyMaskingMiddleware
+
+app.add_middleware(ApiKeyMaskingMiddleware)
+
+logger.info("ApiKeyMaskingMiddleware registered — masking API keys in "
+            "request/response bodies")
 
 # 2. Start the LiteLLM proxy server normally via its Click CLI
 from litellm.proxy.proxy_cli import run_server

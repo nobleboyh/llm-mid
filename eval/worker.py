@@ -84,9 +84,26 @@ def score_record(record: dict, llm=None, embeddings=None) -> dict:
         context_recall,
         faithfulness,
     )
+    from ragas.metrics._answer_relevance import ResponseRelevancy
 
     has_ground_truth = bool(record.get("ground_truth"))
     has_context = bool(record.get("contexts"))
+
+    # ── Metric configuration ────────────────────────────────────────────────────
+    # Ragas 0.4.3 llm_factory() creates an InstructorLLM for OpenAI-compatible
+    # clients.  InstructorLLM.generate() always returns exactly ONE result
+    # regardless of the `n` parameter, so asking for strictness=3 (default)
+    # generates the warning "LLM returned 1 generations instead of requested 3".
+    #
+    # Setting strictness=1 matches what InstructorLLM can actually produce and
+    # eliminates the warning.  DeepSeek-Flash also tends to return empty JSON
+    # for the question-generation prompt; a single valid question is sufficient
+    # for answer_relevancy scoring.
+    #
+    # See https://github.com/vibrantlabsai/ragas/issues for upstream tracking.
+    # Reduce from default strictness=3 — InstructorLLM only ever returns 1 gen
+    if isinstance(answer_relevancy, ResponseRelevancy):
+        answer_relevancy.strictness = 1
 
     # Build the metric list — always include faithfulness + answer_relevancy
     metrics = [faithfulness, answer_relevancy]

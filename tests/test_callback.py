@@ -26,6 +26,25 @@ def minimal_response():
     return resp
 
 
+# ── helpers ──────────────────────────────────────────────────────────────────
+
+
+def _standard_kwargs(**overrides) -> dict:
+    """Minimal kwargs that pass the original_question check and enqueue."""
+    base = {
+        "model": "gemini-flash",
+        "metadata": {
+            "original_question": "What is the capital of France?",
+            "request_category": "fhir_query",
+            "prompt_id": "v2_prompt",
+            "retrieved_context": ["Patient record 123"],
+        },
+        "messages": [],  # no longer used by callback, but kept to match reality
+    }
+    base.update(overrides)
+    return base
+
+
 # ── _should_skip ──────────────────────────────────────────────────────────────
 
 class TestShouldSkip:
@@ -57,29 +76,32 @@ class TestShouldSkip:
 # ── log_success_event ─────────────────────────────────────────────────────────
 
 class TestLogSuccessEvent:
-    def test_skips_and_returns_none(self, logger, minimal_response):
+    def test_skips_ragas_eval_model(self, logger, minimal_response):
         kwargs = {"model": "ragas-eval", "metadata": {}}
         result = logger.log_success_event(kwargs, minimal_response, None, None)
         assert result is None
 
     @patch("eval.redis_store.enqueue_call_record")
+    def test_skips_on_missing_question(self, mock_enqueue, logger, minimal_response):
+        """No original_question in metadata → skip."""
+        kwargs = {"model": "gemini-flash", "metadata": {}}
+        logger.log_success_event(kwargs, minimal_response, None, None)
+        mock_enqueue.assert_not_called()
+
+    @patch("eval.redis_store.enqueue_call_record")
+    def test_skips_on_whitespace_question(self, mock_enqueue, logger, minimal_response):
+        """Whitespace-only original_question → skip."""
+        kwargs = {"model": "gemini-flash", "metadata": {"original_question": "  "}}
+        logger.log_success_event(kwargs, minimal_response, None, None)
+        mock_enqueue.assert_not_called()
+
+    @patch("eval.redis_store.enqueue_call_record")
     def test_enqueues_normal_call(self, mock_enqueue, logger, minimal_response):
-        kwargs = {
-            "model": "gemini-flash",
-            "metadata": {
-                "request_category": "fhir_query",
-                "prompt_id": "v2_prompt",
-                "retrieved_context": ["Patient record 123"],
-            },
-            "messages": [
-                {"role": "system", "content": "You are a FHIR assistant"},
-                {"role": "user", "content": "What is the FHIR resource for Patient?"},
-            ],
-        }
+        kwargs = _standard_kwargs()
         logger.log_success_event(kwargs, minimal_response, None, None)
         mock_enqueue.assert_called_once()
         record = mock_enqueue.call_args[0][0]
-        assert record["question"] == "What is the FHIR resource for Patient?"
+        assert record["question"] == "What is the capital of France?"
         assert "capital of France" in record["answer"]
         assert record["request_category"] == "fhir_query"
         assert record["prompt_id"] == "v2_prompt"
@@ -91,50 +113,20 @@ class TestLogSuccessEvent:
         assert "timestamp" in record
 
     @patch("eval.redis_store.enqueue_call_record")
-    def test_uses_last_user_message(self, mock_enqueue, logger, minimal_response):
-        kwargs = {
-            "model": "deepseek-flash",
-            "metadata": {},
-            "messages": [
-                {"role": "system", "content": "You are helpful"},
-                {"role": "assistant", "content": "First answer"},
-                {"role": "user", "content": "Second question"},
-            ],
-        }
+    def test_uses_original_question(self, mock_enqueue, logger, minimal_response):
+        """original_question is used verbatim, not re-extracted from messages."""
+        kwargs = _standard_kwargs(
+            metadata={"original_question": "Pre-compression question here"},
+            messages=[{"role": "user", "content": "Compressed/transformed text"}],
+        )
         logger.log_success_event(kwargs, minimal_response, None, None)
         record = mock_enqueue.call_args[0][0]
-        assert record["question"] == "Second question"
-
-    @patch("eval.redis_store.enqueue_call_record")
-    def test_empty_messages_falls_back(self, mock_enqueue, logger, minimal_response):
-        kwargs = {"model": "gemini-flash", "metadata": {}, "messages": []}
-        logger.log_success_event(kwargs, minimal_response, None, None)
-        record = mock_enqueue.call_args[0][0]
-        assert record["question"] == ""
-
-    @patch("eval.redis_store.enqueue_call_record")
-    def test_multimodal_content_joins_text(self, mock_enqueue, logger, minimal_response):
-        kwargs = {
-            "model": "gemini-flash",
-            "metadata": {},
-            "messages": [{
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": "What is in this image?"},
-                    {"type": "image_url", "image_url": {"url": "data:image/..."}},
-                ],
-            }],
-        }
-        logger.log_success_event(kwargs, minimal_response, None, None)
-        record = mock_enqueue.call_args[0][0]
-        assert record["question"] == "What is in this image?"
+        assert record["question"] == "Pre-compression question here"
 
     @patch("eval.redis_store.enqueue_call_record")
     def test_call_id_is_uuid(self, mock_enqueue, logger, minimal_response):
         import uuid
-        kwargs = {"model": "gemini-flash", "metadata": {}, "messages": [
-            {"role": "user", "content": "Hello"},
-        ]}
+        kwargs = _standard_kwargs()
         logger.log_success_event(kwargs, minimal_response, None, None)
         record = mock_enqueue.call_args[0][0]
         uuid.UUID(record["call_id"])  # raises ValueError if invalid
@@ -142,8 +134,6 @@ class TestLogSuccessEvent:
     @patch("eval.redis_store.enqueue_call_record")
     def test_enqueue_exception_caught(self, mock_enqueue, logger, minimal_response):
         mock_enqueue.side_effect = ConnectionError("Redis down")
-        kwargs = {"model": "gemini-flash", "metadata": {}, "messages": [
-            {"role": "user", "content": "Hello"},
-        ]}
+        kwargs = _standard_kwargs()
         # Should not raise
         logger.log_success_event(kwargs, minimal_response, None, None)

@@ -46,22 +46,11 @@ class RagasLogger(CustomLogger):
 
         meta = kwargs.get("metadata", {})
 
-        # Extract question — use compressed text (Headroom does not expose
-        # the original pre-compression question in metadata in this version).
-        messages = kwargs.get("messages", [])
-        question = ""
-        for msg in reversed(messages):
-            if isinstance(msg, dict) and msg.get("role") == "user":
-                content = msg.get("content", "")
-                if isinstance(content, list):
-                    # Multi-modal content — join text parts
-                    question = " ".join(
-                        p.get("text", "") for p in content
-                        if isinstance(p, dict) and p.get("type") == "text"
-                    )
-                else:
-                    question = str(content)
-                break
+        # Use the original pre-compression question captured by the
+        # CaptureOriginalQuestionMiddleware. If absent, skip scoring
+        # entirely — scoring against compressed/transformed text would
+        # produce meaningless Ragas metrics.
+        question = meta.get("original_question", "")
 
         def _extract_content(content) -> str:
             """Normalize LiteLLM Message.content to a string.
@@ -92,10 +81,30 @@ class RagasLogger(CustomLogger):
         if choices:
             choice = choices[0]
             if isinstance(choice, dict):
-                # dict response (e.g. Anthropic /v1/messages format)
-                answer = _extract_content(choice.get("message", {}).get("content")
-                                          or choice.get("content", "")
-                                          or choice.get("text", ""))
+                # Dict response — can be one of:
+                #   A) OpenAI format:    {"message": {"content": "..."}, ...}
+                #   B) Anthropic format: {"type": "text", "text": "...", ...}
+                #   C) Anthropic format: {"type": "thinking", "thinking": "...", ...}
+                #
+                # For case B/C the choices *list* is the content-blocks list
+                # from /v1/messages. DeepSeek models emit a "thinking" block
+                # before the "text" block, so choices[0] may not be the answer.
+                msg = choice.get("message", {})
+                if isinstance(msg, dict) and bool(msg.get("content")):
+                    # Case A — standard OpenAI message wrapper
+                    answer = _extract_content(msg["content"])
+                else:
+                    # Case B/C — Anthropic content blocks; find the first
+                    # block with type="text" across the whole list.
+                    for block in choices:
+                        if isinstance(block, dict) and block.get("type") == "text":
+                            answer = _extract_content(block.get("text", ""))
+                            break
+                    # Fallback: extract whatever the first block has
+                    if not answer:
+                        answer = _extract_content(
+                            choice.get("text", "") or choice.get("content", "")
+                        )
             elif hasattr(choice, "message") and choice.message:
                 answer = _extract_content(choice.message.content)
             elif hasattr(choice, "delta") and choice.delta:
@@ -115,11 +124,15 @@ class RagasLogger(CustomLogger):
                         "completion_tokens": u.get("completion_tokens", 0) if isinstance(u, dict) else 0}
             return {}
 
-        # Skip records with no real question — Headroom may have stripped
-        # the user message, or this is a non-conversational call (e.g. a
-        # system ping) that shouldn't pollute Ragas scoring.
+        # Skip records with no original question — Headroom may have stripped
+        # the user message, or this is a non-conversational call that shouldn't
+        # pollute Ragas scoring. Never fall back to compressed messages.
         if not question.strip():
-            logger.debug("Skipping record — empty question (call_id placeholder)")
+            model = kwargs.get("model", "unknown")
+            logger.warning(
+                "Skipping — absent or empty original_question in metadata. "
+                "model=%s", model,
+            )
             return
 
         usage = _get_usage(response_obj)

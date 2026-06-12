@@ -118,6 +118,38 @@ def _resolve_key(category: str | None, prompt_id: str | None) -> str:
     return "eval:scores:all"
 
 
+# ── Admin / teardown helpers ──────────────────────────────────────────────────
+
+def flush_eval() -> int:
+    """Delete ALL eval:* keys from Redis and return the count of removed keys.
+
+    Uses SCAN so it won't block Redis even with large datasets.
+    Call this when you want a clean slate for testing.
+    """
+    deleted = 0
+    cursor = 0
+    while True:
+        cursor, keys = r.scan(cursor=cursor, match="eval:*", count=1000)
+        if keys:
+            deleted += r.delete(*keys)
+        if cursor == 0:
+            break
+    logger.info("Flushed %d eval:* keys from Redis", deleted)
+    return deleted
+
+
+# ── CLI entry point: python -m eval.redis_store ─────────────────────────────
+
+if __name__ == "__main__":
+    import sys
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+    count = flush_eval()
+    print(f"Done. Removed {count} eval:* keys from {REDIS_URL}")
+
+
 def _hydrate(call_id: str) -> dict | None:
     raw = r.hgetall(f"eval:call:{call_id}")
     if not raw:

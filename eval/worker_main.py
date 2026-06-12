@@ -60,7 +60,12 @@ def main():
         base_url="https://api.deepseek.com/v1",
         api_key=deepseek_key,
     )
-    ragas_llm = llm_factory(eval_model, client=client)
+    ragas_llm = llm_factory(
+        eval_model,
+        client=client,
+        temperature=0.1,     # Lower temp → more deterministic JSON output
+        max_tokens=2048,     # Room for the question-generation prompt response
+    )
 
     # Create Gemini-based embeddings for metrics that need them
     # (answer_relevancy, context_recall). Uses the Gemini REST API
