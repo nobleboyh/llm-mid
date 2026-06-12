@@ -1,7 +1,7 @@
 # GateMid — Team Smart Router + Headroom Compression
 # LiteLLM Proxy Configuration
 #
-# Headroom runs as ASGI middleware (proxy/startup.py), not via callbacks.
+# Headroom runs as ASGI middleware (proxy/entrypoint.py), not via callbacks.
 # Middleware fires at HTTP level, more reliable than callback hooks.
 
 model_list:
@@ -25,6 +25,14 @@ model_list:
   - model_name: deepseek-pro
     litellm_params:
       model: deepseek/deepseek-v4-pro
+      api_key: "os.environ/DEEPSEEK_API_KEY"
+
+  # Ragas Eval Model — used by the eval-worker for LLM-as-judge scoring.
+  # This model alias is excluded from the RagasLogger (see proxy/callback.py)
+  # to prevent an infinite Ragas scoring loop. Uses DeepSeek Flash for cost.
+  - model_name: ragas-eval
+    litellm_params:
+      model: deepseek/deepseek-v4-flash
       api_key: "os.environ/DEEPSEEK_API_KEY"
 
   # Team Smart Router — auto-classifies and routes
@@ -58,9 +66,9 @@ model_list:
 
 litellm_settings:
   drop_params: true
-  # Headroom is now ASGI middleware (proxy/startup.py) — no callbacks needed.
-  # Middleware fires at HTTP level, more reliable than callback hooks.
-  # No callbacks configured — Headroom uses ASGI middleware instead.
+  # RagasLogger custom callback — captures every LLM call for async quality
+  # scoring. Pushes call records to Redis; eval-worker scores independently.
+  callbacks: ['proxy.callback.ragas_callback']
 
 general_settings:
   master_key: "os.environ/GATEWAY_MASTER_KEY"

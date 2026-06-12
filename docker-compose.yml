@@ -15,15 +15,60 @@ services:
       # Provider keys
       GEMINI_API_KEY:       ${GEMINI_API_KEY}
       DEEPSEEK_API_KEY:     ${DEEPSEEK_API_KEY}
+      OPENAI_API_KEY:       ${OPENAI_API_KEY:-}
       # Gateway
       GATEWAY_MASTER_KEY:   ${GATEWAY_MASTER_KEY:-sk-local-dev-key}
       # Hugging Face token (speeds up model downloads)
       HF_TOKEN:             ${HF_TOKEN:-}
+      # Redis (for Ragas eval queue)
+      REDIS_URL:            redis://redis:6379
     volumes:
       - ./litellm_config.yaml:/app/litellm_config.yaml:ro
+      - ./eval:/app/eval
+    depends_on:
+      redis:
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "curl -f -H \"Authorization: Bearer $${GATEWAY_MASTER_KEY:-sk-local-dev-key}\" http://localhost:4000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 15s
+
+  # ── Redis (Ragas eval queue + score storage) ──────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: gatemid-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --save 60 1 --loglevel warning
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ── Eval Worker: Ragas async scoring ──────────────────────────────────────
+  eval-worker:
+    build:
+      context: .
+      dockerfile: eval/Dockerfile
+    container_name: gatemid-eval-worker
+    restart: unless-stopped
+    environment:
+      REDIS_URL:            redis://redis:6379
+      DEEPSEEK_API_KEY:     ${DEEPSEEK_API_KEY}
+      GEMINI_API_KEY:       ${GEMINI_API_KEY}
+      RAGAS_EVAL_MODEL:     deepseek-chat
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./eval:/app/eval
+      - ./requirements-eval.txt:/app/requirements-eval.txt:ro
+
+volumes:
+  redis_data:

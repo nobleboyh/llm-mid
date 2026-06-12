@@ -13,6 +13,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # entrypoint registers Headroom ASGI middleware + guardrails, then starts LiteLLM
 COPY entrypoint.py .
 COPY guardrails ./guardrails/
+COPY __init__.py ./proxy/
+COPY callback.py ./proxy/
 
 # litellm_config.yaml is bind-mounted at runtime so it can be edited
 # without rebuilding the image
