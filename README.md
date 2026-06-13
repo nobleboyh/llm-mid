@@ -1,10 +1,11 @@
 # GateMid — AI Gateway Middleware
 
-Local-dev AI gateway combining [Headroom](https://github.com/chopratejas/headroom) context compression (ASGI middleware) with [LiteLLM](https://github.com/BerriAI/litellm) auto-routing.
+Local-dev AI gateway combining [Headroom](https://github.com/chopratejas/headroom) context compression (ASGI middleware) with [LiteLLM](https://github.com/BerriAI/litellm) auto-routing and async [Ragas](https://docs.ragas.io/) quality scoring.
 
 **What it does:**
 - Compresses prompts before they reach the LLM (60-95% token savings)
 - Automatically routes queries to the right model by complexity
+- Asynchronously scores every response for quality (faithfulness, relevancy, precision)
 - Drop-in proxy — works with Claude Code, Open Code, and any OpenAI-compatible SDK
 
 ---
@@ -12,26 +13,82 @@ Local-dev AI gateway combining [Headroom](https://github.com/chopratejas/headroo
 ## Architecture
 
 ```
-Claude Code / Application
-      │  HTTP :4000
-      ▼
-┌─────────────────────────────────────────────┐
-│  LiteLLM Proxy (Python process)             │
-│                                             │
-│  ASGI Middleware Stack (inbound):           │
-│    1. Headroom CompressionMiddleware        │
-│       ├─ SmartCrusher  (JSON)               │
-│       ├─ CodeCompressor (AST)               │
-│       └─ CacheAligner  (KV cache prefix)    │
-│    2. ComplexityRouter (auto-tier)          │
-│    3. Provider dispatch                     │
-└─────────────────────────────────────────────┘
-      │  HTTPS (outbound to provider)
-      ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                        GateMid Proxy (:4000)                         │
+│                                                                      │
+│  Inbound Request                                                     │
+│       │                                                              │
+│       ▼                                                              │
+│  ┌──────────────────────────────────────────────────────────────┐    │
+│  │              ASGI Middleware Stack (registered order)         │    │
+│  │                                                               │    │
+│  │  1. ApiKeyMaskingMiddleware        (outermost — runs first)   │    │
+│  │     └─ Masks API keys in req/res bodies (8 regex patterns)    │    │
+│  │                                                               │    │
+│  │  2. CaptureOriginalQuestionMiddleware                         │    │
+│  │     └─ Snapshots pre-compression user question into metadata  │    │
+│  │                                                               │    │
+│  │  3. Headroom CompressionMiddleware  (innermost — runs last)   │    │
+│  │     ├─ SmartCrusher  (JSON compression)                       │    │
+│  │     ├─ CodeCompressor (AST-based)                             │    │
+│  │     └─ CacheAligner  (KV cache prefix alignment)              │    │
+│  └──────────────────────────────────────────────────────────────┘    │
+│       │                                                              │
+│       ▼                                                              │
+│  ┌──────────────────────────────────────────────────────────────┐    │
+│  │              LiteLLM Proxy Engine                             │    │
+│  │                                                               │    │
+│  │  ComplexityRouter (team-smart-router)                         │    │
+│  │   ├─ SIMPLE    → deepseek-flash   (greetings, yes/no, etc.)  │    │
+│  │   ├─ MEDIUM    → deepseek-flash   (general queries)           │    │
+│  │   ├─ COMPLEX   → deepseek-pro     (code, architecture)        │    │
+│  │   └─ REASONING → deepseek-pro     (step-by-step, debugging)  │    │
+│  │                                                               │    │
+│  │  Provider translation (Anthropic ↔ OpenAI/Gemini/DeepSeek)    │    │
+│  └──────────────────────────────────────────────────────────────┘    │
+│       │                                                              │
+│       ▼                                                              │
+│  ┌──────────────────────────────────────────────────────────────┐    │
+│  │              RagasLogger (Custom Callback)                    │    │
+│  │  └─ On success: extracts {question, answer, contexts}         │    │
+│  │     └─ RPUSH to Redis eval:pending queue → async scoring      │    │
+│  └──────────────────────────────────────────────────────────────┘    │
+└──────────────────────────────────────────────────────────────────────┘
+       │  HTTPS (outbound to provider)
+       ▼
 Gemini / DeepSeek API
+
+
+┌──────────────────────────────────────────────────────────────────────┐
+│                   Eval Worker (separate container)                   │
+│                                                                      │
+│  1. BLPOP from Redis eval:pending queue                              │
+│  2. Ragas scoring (DeepSeek-as-judge + Gemini embeddings)            │
+│     ├─ Faithfulness          (weight: 0.4)                           │
+│     ├─ Answer Relevancy      (weight: 0.4)                           │
+│     └─ Context Precision     (weight: 0.2)                           │
+│  3. Write scored record → Redis (call_id → hash)                     │
+│  4. Update global & category leaderboards (sorted sets)              │
+│                                                                      │
+│  Redis Data Layout:                                                  │
+│  ├─ eval:pending            List    — unscored call queue           │
+│  ├─ eval:call:{call_id}     Hash    — full scored record (30d TTL) │
+│  ├─ eval:scores:all         ZSet    — global composite ranking      │
+│  ├─ eval:scores:cat:{cat}   ZSet    — per-category ranking          │
+│  └─ eval:scores:prompt:{id} ZSet    — per-prompt version ranking    │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
-Headroom now runs as **ASGI middleware** (`proxy/startup.py`) instead of the old callback approach — more reliable, fires at HTTP level on every request.
+### Key architectural decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Middleware approach | **ASGI middleware** (not LiteLLM callbacks) | More reliable — fires at HTTP level on every request, covers all routes including streaming |
+| Entrypoint | **Custom `entrypoint.py`** (not `--startup_file`) | Full control over Headroom patches, middleware order, and logger configuration |
+| Routing timing | **Route before compress** | ComplexityRouter sees original (uncompressed) prompt for correct classification; compression happens at ASGI level after routing resolves the target model |
+| Compression model | **SmartCrusher only** (Kompress disabled) | Target is JSON/FHIR/HL7 payloads — ONNX model adds 100-200ms latency and ~500MB download for no benefit |
+| Evaluation model | **Direct DeepSeek client** (bypasses LiteLLM) | Eval worker avoids competing for proxy resources with user requests |
+| Loop prevention | **Model prefix + metadata flag** | Two independent checks prevent Ragas from scoring its own calls |
 
 ---
 
@@ -73,8 +130,8 @@ Add to your shell profile (`~/.zshrc`, `~/.bashrc`, etc.):
 export ANTHROPIC_BASE_URL="http://localhost:4000"
 export ANTHROPIC_API_KEY="sk-local-dev-key"
 export ANTHROPIC_MODEL="team-smart-router"
-export ANTHROPIC_DEFAULT_HAIKU_MODEL="gemini-flash"
-export ANTHROPIC_DEFAULT_SONNET_MODEL="gemini-pro"
+export ANTHROPIC_DEFAULT_HAIKU_MODEL="deepseek-flash"
+export ANTHROPIC_DEFAULT_SONNET_MODEL="deepseek-pro"
 ```
 
 Then reload:
@@ -99,10 +156,13 @@ claude (CLI)
   │  ANTHROPIC_BASE_URL → GateMid (:4000)
   ▼
 GateMid (LiteLLM Proxy)
-  │  1. Headroom ASGI middleware compresses context
-  │  2. ComplexityRouter classifies prompt
-  │  3. LiteLLM translates Anthropic → Gemini/Deepseek format
-  │  4. Routes to resolved model
+  │  1. ApiKeyMasking sanitizes request body
+  │  2. CaptureOriginal snapshots the raw question
+  │  3. Headroom ASGI middleware compresses context
+  │  4. ComplexityRouter classifies prompt → picks model
+  │  5. LiteLLM translates Anthropic → Gemini/Deepseek format
+  │  6. Routes to resolved model
+  │  7. RagasLogger enqueues {question, answer} for async scoring
   ▼
 Gemini / Deepseek API
 ```
@@ -119,8 +179,8 @@ Create `~/.claude/settings.json` to pin specific models per project or override 
     "ANTHROPIC_BASE_URL": "http://localhost:4000",
     "ANTHROPIC_API_KEY": "sk-local-dev-key",
     "ANTHROPIC_MODEL": "team-smart-router",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "gemini-flash",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "gemini-pro"
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "deepseek-flash",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "deepseek-pro"
   }
 }
 ```
@@ -186,91 +246,57 @@ opencode
 
 Use `/connect` in the Open Code CLI and select the **GateMid** provider, or set the default model to `team-smart-router` for automatic routing.
 
-### Direct model selection
-
-To bypass the router and pick a model directly in Open Code:
-
-```bash
-opencode --model gemini-pro
-```
-
----
-
-## Manual Model Selection
-
-You can also call models directly from any OpenAI-compatible SDK:
-
-```python
-from openai import OpenAI
-
-client = OpenAI(
-    base_url="http://localhost:4000/v1",
-    api_key="sk-local-dev-key",
-)
-
-# Auto-routing (recommended)
-response = client.chat.completions.create(
-    model="team-smart-router",
-    messages=[{"role": "user", "content": "Write a Rust async function"}],
-)
-
-# Direct model selection
-response = client.chat.completions.create(
-    model="deepseek-pro",
-    messages=[{"role": "user", "content": "Explain quantum computing"}],
-)
-```
-
 ---
 
 ## How Routing Works
 
-```
-Incoming prompt
-      │
-      ▼
-Headroom ASGI Middleware (~20ms)
-      │  SmartCrusher (JSON), CodeCompressor (AST), CacheAligner (KV cache)
-      ▼
-ComplexityRouter (sub-millisecond, local)
-      │
-      ├─ SIMPLE    → gemini-flash     (greetings, definitions, yes/no)
-      ├─ MEDIUM    → deepseek-flash   (general queries — default fallback)
-      ├─ COMPLEX   → gemini-pro       (code, architecture, technical)
-      └─ REASONING → deepseek-pro     (step-by-step, analysis, debugging)
-      │
-      ▼
-Compressed prompt → Provider API
-```
+The **complexity router** (`team-smart-router`) is a local, rule-based classifier — sub-millisecond, zero external API calls. It analyzes each prompt across seven weighted dimensions:
 
----
+| Dimension | Weight | Purpose |
+|-----------|--------|---------|
+| `reasoningMarkers` | 0.30 | Step-by-step, analysis, debugging — strongest signal |
+| `simpleIndicators` | 0.15 | Greetings, yes/no questions — helps classify simple prompts correctly |
+| `codePresence` | 0.10 | Code blocks, API patterns |
+| `technicalTerms` | 0.10 | Domain-specific terminology |
+| `tokenCount` | 0.05 | Prompt length (system prompt adds baseline tokens) |
+| `multiStepPatterns` | 0.05 | Multi-part instructions |
+| `questionComplexity` | 0.05 | Question structure depth |
 
-## Running Tests
+**Classification boundaries:**
 
-```bash
-# With the gateway running:
-pip install pytest openai httpx
-GATEMID_URL=http://localhost:4000 pytest tests/ -v
-```
+| Tier | Score Range | Model | Use Case |
+|------|-------------|-------|----------|
+| SIMPLE | 0.00 – 0.20 | deepseek-flash | Greetings, definitions, yes/no |
+| MEDIUM | 0.20 – 0.45 | deepseek-flash | General queries (default fallback) |
+| COMPLEX | 0.45 – 0.65 | deepseek-pro | Code, architecture, technical |
+| REASONING | 0.65+ | deepseek-pro | Step-by-step, analysis, debugging |
 
----
-
-## Configuration
-
-| File | Purpose |
-|------|---------|
-| `litellm_config.yaml` | Model routing, complexity router, provider config |
-| `proxy/startup.py` | Headroom ASGI middleware registration |
-| `docker-compose.yml` | Single-service Docker deployment |
-| `.env` | Provider API keys (never commit) |
-
-See [LiteLLM Proxy docs](https://docs.litellm.ai/docs/proxy/configs) and [Headroom docs](https://headroom-docs.vercel.app/) for all options.
+Token thresholds are tuned for Claude Code's ~500+ token system prompt: `simple` at 100 tokens, `complex` at 2000 tokens.
 
 ---
 
 ## Scoring & Evaluation
 
-GateMid scores LLM responses asynchronously using [Ragas](https://docs.ragas.io/) and stores results in Redis.
+Every LLM response is scored asynchronously for quality using Ragas. The eval-worker runs in a separate container so scoring never impacts request latency.
+
+### Scoring pipeline
+
+```
+LLM Response → RagasLogger.log_success_event()
+                    │ extract question, answer, usage
+                    ▼
+              Redis RPUSH "eval:pending"
+                    │
+                    ▼
+              eval-worker (BLPOP → score → Redis write)
+                    │
+                    ├─ Faithfulness      40%  — Is the answer grounded in context?
+                    ├─ Answer Relevancy  40%  — How relevant is the answer to the question?
+                    └─ Context Precision  20%  — Does context contain only relevant info?
+                    │
+                    ▼
+              Redis scored records + leaderboards
+```
 
 ### View scores
 
@@ -288,6 +314,8 @@ docker exec gatemid-headroom python -m eval.score_view --prompt-id v2_system_pro
 docker exec gatemid-headroom python -m eval.score_view --json
 ```
 
+The eval-worker uses DeepSeek as the LLM-as-judge (via direct OpenAI-compatible client) and Gemini for embeddings (via lightweight httpx — no PyTorch required).
+
 ### Clear Redis data for a fresh test
 
 ```bash
@@ -298,7 +326,7 @@ docker exec gatemid-headroom python eval/clear_redis.py
 docker exec gatemid-headroom python eval/clear_redis.py --hard
 ```
 
-The script also exports a Python function for programmatic use:
+Programmatic use:
 
 ```python
 from eval.redis_store import flush_eval
@@ -307,11 +335,96 @@ flush_eval()  # returns count of deleted keys
 
 ---
 
+## Custom Middleware Stack
+
+Three custom ASGI middlewares are registered on the LiteLLM FastAPI app. Registration order is critical — FastAPI/Starlette applies middleware in reverse (last registered = outermost).
+
+### 1. ApiKeyMaskingMiddleware (outermost)
+
+**File:** `proxy/guardrails/api_key_masking.py`
+
+Sanitizes API keys from request/response bodies before any other middleware or logging sees them. Uses 8 ordered regex patterns covering Gemini (`AIzaSy`), Hugging Face (`hf_`), GitHub tokens, AWS access keys, OpenAI/Anthropic (`sk-`), Bearer tokens, and generic 36+ char strings. Preserves key type prefixes while masking the sensitive portion.
+
+### 2. CaptureOriginalQuestionMiddleware (middle)
+
+**File:** `proxy/capture_original.py`
+
+Buffers the full request body before Headroom compression transforms it. Scans messages in reverse for the last user message and injects `metadata.original_question` into the LiteLLM request body. This ensures the eval system scores the real user question, not the compressed version.
+
+### 3. Headroom CompressionMiddleware (innermost)
+
+**File:** `headroom.integrations.asgi` (third-party, locally patched)
+
+Three headroom patches are applied at startup in `proxy/entrypoint.py`:
+
+| Patch | What it does |
+|-------|-------------|
+| `compress_user_messages=True` | Headroom default is `False` — forces compression on user messages |
+| `enable_kompress=True` | Enables SmartCrusher for JSON payloads |
+| `skip_user_messages=False` | Ensures ContentRouter doesn't skip user payloads |
+
+---
+
+## Project Map
+
+| Layer | File | Purpose |
+|-------|------|---------|
+| **Entrypoint** | `proxy/entrypoint.py` | Custom startup — registers ASGI middleware, patches Headroom, starts LiteLLM |
+| **Config** | `litellm_config.yaml` | Model definitions, complexity router config, callback registration |
+| **Middleware** | `proxy/guardrails/api_key_masking.py` | API key sanitization (8 regex patterns) |
+| **Middleware** | `proxy/capture_original.py` | Pre-compression question snapshot |
+| **Middleware** | `proxy/startup.py` | (Legacy) replaced by `entrypoint.py` |
+| **Callback** | `proxy/callback.py` | `RagasLogger` — captures LLM responses and enqueues for scoring |
+| **Eval** | `eval/worker.py` | Ragas scoring logic — `score_record()`, `compute_composite()`, `eval_worker()` loop |
+| **Eval** | `eval/worker_main.py` | Eval-worker entrypoint — configures judge LLM + embeddings |
+| **Eval** | `eval/redis_store.py` | Redis data layer — queue management, scored records, leaderboards |
+| **Eval** | `eval/score_view.py` | CLI for querying best/worst scoring calls |
+| **Eval** | `eval/clear_redis.py` | CLI for clearing eval data from Redis |
+| **Eval** | `eval/gemini_embeddings.py` | Lightweight Gemini embeddings (httpx, no PyTorch) |
+| **Infra** | `docker-compose.yml` | Three services: proxy, redis, eval-worker |
+| **Infra** | `proxy/Dockerfile` | Proxy container build |
+| **Infra** | `eval/Dockerfile` | Eval-worker container build |
+| **Tests** | `tests/` | Test suite: routing, compression, guardrails, callback, ragas, redis |
+
+---
+
+## Running Tests
+
+```bash
+# With the gateway running:
+pip install pytest openai httpx
+GATEMID_URL=http://localhost:4000 pytest tests/ -v
+```
+
+Test coverage:
+
+| Test file | What it covers |
+|-----------|---------------|
+| `tests/test_routing.py` | Complexity router classifies prompts into correct tiers |
+| `tests/test_compression.py` | Headroom compression produces valid responses |
+| `tests/test_guardrails.py` | API key masking regex patterns (unit + integration) |
+| `tests/test_callback.py` | RagasLogger skip logic and enqueue behavior |
+| `tests/test_ragas_runner.py` | `score_record()` and `compute_composite()` logic |
+| `tests/test_redis_store.py` | Redis queue and leaderboard operations |
+
+---
+
+## Configuration Reference
+
+| File | Purpose |
+|------|---------|
+| `litellm_config.yaml` | Model routing, complexity router, provider config, callbacks |
+| `proxy/entrypoint.py` | ASGI middleware registration, Headroom patches, logger config |
+| `docker-compose.yml` | Three-service Docker deployment |
+| `.env` | Provider API keys (never commit) |
+
+See [LiteLLM Proxy docs](https://docs.litellm.ai/docs/proxy/configs) and [Headroom docs](https://headroom-docs.vercel.app/) for all options.
+
+---
+
 ## Troubleshooting
 
 ### Gateway fails to start
-
-Check the logs:
 
 ```bash
 docker compose logs litellm
