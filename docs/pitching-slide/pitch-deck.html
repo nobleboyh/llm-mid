@@ -1,0 +1,1570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Productivity &times; Token — Hackathon Pitch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Roboto:wght@300;400;500&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --blue:    #1A73E8;
+    --blue-d:  #1557B0;
+    --blue-l:  #E8F0FE;
+    --green:   #34A853;
+    --green-l: #E6F4EA;
+    --amber:   #F9AB00;
+    --amber-l: #FEF7E0;
+    --red:     #EA4335;
+    --red-l:   #FCE8E6;
+    --ink:     #202124;
+    --ink2:    #3C4043;
+    --muted:   #5F6368;
+    --border:  #DADCE0;
+    --surface: #F8F9FA;
+    --white:   #FFFFFF;
+    --chip-h:  28px;
+  }
+
+  body {
+    font-family: 'Roboto', sans-serif;
+    background: #E8EAED;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 0;
+  }
+
+  /* ── Slide shell ─────────────────────────────────────── */
+  .deck { width: 100vw; height: 100vh; position: relative; overflow: hidden; }
+
+  .slide {
+    position: absolute; inset: 0;
+    background: var(--white);
+    display: none;
+    flex-direction: column;
+  }
+  .slide.active { display: flex; }
+
+  /* ── Top bar ─────────────────────────────────────────── */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 48px;
+    height: 52px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .topbar-left { display: flex; align-items: center; gap: 12px; }
+  .topbar-logo { display: flex; gap: 4px; }
+  .topbar-logo span {
+    width: 10px; height: 10px; border-radius: 50%;
+    display: inline-block;
+  }
+  .topbar-title { font-family: 'Google Sans', sans-serif; font-size: 13px; font-weight: 500; color: var(--muted); letter-spacing: .3px; }
+  .topbar-track {
+    font-size: 11px; font-weight: 500; letter-spacing: .8px; text-transform: uppercase;
+    padding: 3px 10px; border-radius: 12px; background: var(--blue-l); color: var(--blue);
+  }
+  .topbar-counter { font-family: 'Roboto Mono', monospace; font-size: 12px; color: var(--muted); }
+
+  /* ── Slide body ──────────────────────────────────────── */
+  .slide-body {
+    flex: 1; overflow-y: auto;
+    display: flex; flex-direction: column;
+    padding: 40px 72px 100px;
+  }
+
+  /* ── Bottom nav ──────────────────────────────────────── */
+  .nav {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    height: 60px;
+    background: var(--white);
+    border-top: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center; gap: 16px;
+    z-index: 100;
+  }
+  .nav-btn {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 24px;
+    border-radius: 24px;
+    border: 1px solid var(--border);
+    background: var(--white);
+    color: var(--blue);
+    font-family: 'Google Sans', sans-serif;
+    font-size: 14px; font-weight: 500;
+    cursor: pointer;
+    transition: background .15s, box-shadow .15s;
+  }
+  .nav-btn:hover { background: var(--blue-l); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+  .nav-btn:disabled { color: var(--border); pointer-events: none; }
+  .nav-btn.primary { background: var(--blue); color: var(--white); border-color: var(--blue); }
+  .nav-btn.primary:hover { background: var(--blue-d); }
+  .nav-dots { display: flex; gap: 6px; align-items: center; }
+  .nav-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--border); cursor: pointer; transition: all .2s;
+  }
+  .nav-dot.active { background: var(--blue); width: 20px; border-radius: 3px; }
+
+  /* ── Typography ──────────────────────────────────────── */
+  .eyebrow {
+    font-family: 'Roboto Mono', monospace;
+    font-size: 11px; font-weight: 500; letter-spacing: 1.2px; text-transform: uppercase;
+    color: var(--blue); margin-bottom: 10px;
+  }
+  .eyebrow.green { color: var(--green); }
+  .headline {
+    font-family: 'Google Sans', sans-serif;
+    font-size: clamp(26px, 3.2vw, 42px);
+    font-weight: 700; color: var(--ink);
+    line-height: 1.15; margin-bottom: 8px;
+  }
+  .subhead {
+    font-size: 18px; color: var(--muted); font-weight: 300;
+    margin-bottom: 36px; line-height: 1.5;
+  }
+  .body-text { font-size: 15px; color: var(--ink2); line-height: 1.65; }
+  .label {
+    font-family: 'Google Sans', sans-serif; font-size: 12px;
+    font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: .6px;
+  }
+
+  /* ── Two-col layout ──────────────────────────────────── */
+  .cols { display: grid; gap: 32px; }
+  .cols-2 { grid-template-columns: 1fr 1fr; }
+  .cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .cols-6040 { grid-template-columns: 3fr 2fr; }
+  .cols-4060 { grid-template-columns: 2fr 3fr; }
+
+  /* ── Cards ───────────────────────────────────────────── */
+  .card {
+    border: 1px solid var(--border); border-radius: 12px;
+    padding: 24px; background: var(--white);
+  }
+  .card.blue-tint { background: var(--blue-l); border-color: #c5d8fc; }
+  .card.green-tint { background: var(--green-l); border-color: #b7dfbe; }
+  .card.amber-tint { background: var(--amber-l); border-color: #f5dfa0; }
+  .card.surface { background: var(--surface); }
+  .card-title {
+    font-family: 'Google Sans', sans-serif; font-size: 14px; font-weight: 700;
+    color: var(--ink); margin-bottom: 10px;
+  }
+
+  /* ── Chips ───────────────────────────────────────────── */
+  .chip {
+    display: inline-flex; align-items: center;
+    height: var(--chip-h); padding: 0 12px; border-radius: 14px;
+    font-size: 12px; font-weight: 500; white-space: nowrap;
+  }
+  .chip.blue { background: var(--blue-l); color: var(--blue); }
+  .chip.green { background: var(--green-l); color: var(--green); }
+  .chip.amber { background: var(--amber-l); color: #c26d00; }
+  .chip.red { background: var(--red-l); color: var(--red); }
+  .chip.gray { background: var(--surface); color: var(--muted); border: 1px solid var(--border); }
+
+  /* ── Bullet list ─────────────────────────────────────── */
+  .blist { list-style: none; display: flex; flex-direction: column; gap: 12px; }
+  .blist li {
+    display: flex; align-items: flex-start; gap: 10px;
+    font-size: 15px; color: var(--ink2); line-height: 1.5;
+  }
+  .blist li::before {
+    content: '';
+    flex-shrink: 0;
+    margin-top: 7px;
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--blue);
+  }
+  .blist.green li::before { background: var(--green); }
+
+  /* ── Divider ─────────────────────────────────────────── */
+  .divider { height: 1px; background: var(--border); margin: 28px 0; }
+
+  /* ── SVG infographic helpers ─────────────────────────── */
+  svg text { font-family: 'Google Sans', 'Roboto', sans-serif; }
+
+  /* ── Flow arrow ──────────────────────────────────────── */
+  .flow-arrow {
+    display: flex; align-items: center; gap: 0; margin: 6px 0;
+  }
+  .flow-box {
+    border-radius: 8px; padding: 10px 18px;
+    font-family: 'Google Sans', sans-serif; font-size: 13px; font-weight: 500;
+    text-align: center; flex: 1;
+  }
+  .flow-connector {
+    display: flex; flex-direction: column; align-items: center;
+    padding: 0 4px; color: var(--muted); font-size: 18px; line-height: 1;
+  }
+
+  /* ── Big stat ────────────────────────────────────────── */
+  .stat-block { text-align: center; }
+  .stat-number {
+    font-family: 'Google Sans', sans-serif; font-size: clamp(42px, 5vw, 64px);
+    font-weight: 700; line-height: 1;
+  }
+  .stat-label { font-size: 13px; color: var(--muted); margin-top: 6px; }
+
+  /* ── Quote ───────────────────────────────────────────── */
+  .quote {
+    border-left: 3px solid var(--blue); padding: 12px 20px;
+    background: var(--blue-l); border-radius: 0 8px 8px 0;
+    font-size: 14px; color: var(--ink2); font-style: italic; line-height: 1.6;
+  }
+  .quote cite { display: block; margin-top: 6px; font-style: normal; font-size: 12px; color: var(--muted); font-weight: 500; }
+
+  /* ── Table ───────────────────────────────────────────── */
+  .g-table { width: 100%; border-collapse: collapse; }
+  .g-table th {
+    text-align: left; padding: 10px 14px;
+    font-family: 'Google Sans', sans-serif; font-size: 12px; font-weight: 500;
+    color: var(--muted); text-transform: uppercase; letter-spacing: .5px;
+    border-bottom: 2px solid var(--border); background: var(--surface);
+  }
+  .g-table td { padding: 10px 14px; font-size: 14px; color: var(--ink2); border-bottom: 1px solid var(--border); }
+  .g-table tr:last-child td { border-bottom: none; }
+  .g-table tr:hover td { background: var(--surface); }
+  code { font-family: 'Roboto Mono', monospace; font-size: 12px; background: var(--surface); padding: 1px 5px; border-radius: 4px; color: var(--blue-d); }
+
+  /* ── Warning note ────────────────────────────────────── */
+  .note {
+    display: flex; gap: 10px; align-items: flex-start;
+    padding: 12px 16px; border-radius: 8px; border: 1px solid #f5c97a;
+    background: var(--amber-l); font-size: 13px; color: var(--ink2); line-height: 1.5;
+  }
+  .note-icon { flex-shrink: 0; width: 16px; height: 16px; margin-top: 1px; }
+
+  /* ── Progress bar ────────────────────────────────────── */
+  .prog-track { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+  .prog-fill { height: 100%; border-radius: 4px; transition: width .4s; }
+
+  /* ── Vertical pipeline ───────────────────────────────── */
+  .pipeline { display: flex; flex-direction: column; gap: 0; }
+  .pipe-step {
+    display: flex; gap: 16px; align-items: stretch;
+  }
+  .pipe-left { display: flex; flex-direction: column; align-items: center; width: 32px; flex-shrink: 0; }
+  .pipe-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
+  .pipe-line { width: 2px; flex: 1; min-height: 20px; background: var(--border); margin: 4px 0; }
+  .pipe-content { padding-bottom: 16px; flex: 1; }
+  .pipe-title { font-family: 'Google Sans', sans-serif; font-size: 14px; font-weight: 600; color: var(--ink); margin-bottom: 3px; }
+  .pipe-desc { font-size: 13px; color: var(--muted); line-height: 1.5; }
+
+  /* ── Tag row ─────────────────────────────────────────── */
+  .tag-row { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  /* ─────────────────────────────────────────────────────── */
+  /*  SLIDE 1 — Title                                        */
+  /* ─────────────────────────────────────────────────────── */
+  .s1-hero {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; gap: 0;
+  }
+  .s1-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 16px; border-radius: 20px;
+    background: var(--blue-l); color: var(--blue);
+    font-size: 12px; font-weight: 500; letter-spacing: .5px; margin-bottom: 28px;
+  }
+  .s1-title {
+    font-family: 'Google Sans', sans-serif;
+    font-size: clamp(48px, 7vw, 80px); font-weight: 700;
+    color: var(--ink); line-height: 1.05; margin-bottom: 20px;
+  }
+  .s1-title .x { color: var(--blue); }
+  .s1-sub { font-size: 20px; color: var(--muted); font-weight: 300; max-width: 540px; line-height: 1.5; margin-bottom: 40px; }
+  .s1-pills { display: flex; gap: 12px; justify-content: center; }
+  .s1-pill {
+    padding: 8px 20px; border-radius: 20px; border: 1.5px solid var(--border);
+    font-family: 'Google Sans', sans-serif; font-size: 14px; font-weight: 500; color: var(--ink2);
+  }
+</style>
+</head>
+<body>
+<div class="deck" id="deck">
+
+<!-- ╔══════════════════════════════════════════════════════════╗ -->
+<!-- ║  SLIDE 1 — Title                                         ║ -->
+<!-- ╚══════════════════════════════════════════════════════════╝ -->
+<div class="slide active" data-track="">
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="topbar-logo">
+        <span style="background:#1A73E8"></span>
+        <span style="background:#34A853"></span>
+        <span style="background:#F9AB00"></span>
+        <span style="background:#EA4335"></span>
+      </div>
+      <span class="topbar-title">Hackathon 2026</span>
+    </div>
+    <span class="topbar-counter" id="counter-0">1 / 18</span>
+  </div>
+  <div class="slide-body" style="justify-content:center">
+    <div class="s1-hero">
+      <div class="s1-badge">Hackathon Project — Developer Productivity</div>
+      <div class="s1-title">Productivity <span class="x">&times;</span> Token</div>
+      <div class="s1-sub">Two tools. One goal — help developers ship faster and spend less on every LLM call.</div>
+      <div class="s1-pills">
+        <div class="s1-pill">Human Layer</div>
+        <div class="s1-pill" style="border-color:var(--blue);color:var(--blue)">+</div>
+        <div class="s1-pill">Non-Human Layer</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ╔══════════════════════════════════════════════════════════╗ -->
+<!-- ║  SLIDE 2 — The Problem                                   ║ -->
+<!-- ╚══════════════════════════════════════════════════════════╝ -->
+<div class="slide" data-track="">
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="topbar-logo"><span style="background:#1A73E8"></span><span style="background:#34A853"></span><span style="background:#F9AB00"></span><span style="background:#EA4335"></span></div>
+      <span class="topbar-title">The Problem</span>
+    </div>
+    <span class="topbar-counter">2 / 18</span>
+  </div>
+  <div class="slide-body">
+    <div class="eyebrow">Why we built this</div>
+    <div class="headline">Two things quietly killing your team's velocity</div>
+    <div class="subhead">Both trace back to the same root cause — wasted cognitive and computational resources.</div>
+    <div class="cols cols-2" style="gap:24px;margin-top:8px">
+      <div class="card" style="border-top:3px solid var(--blue);padding:32px">
+        <div style="margin-bottom:16px">
+          <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+            <rect width="40" height="40" rx="8" fill="#E8F0FE"/>
+            <path d="M12 28L20 12L28 28H12Z" stroke="#1A73E8" stroke-width="2" stroke-linejoin="round" fill="none"/>
+            <circle cx="20" cy="20" r="2" fill="#1A73E8"/>
+          </svg>
+        </div>
+        <div class="card-title" style="font-size:16px;margin-bottom:12px">Brownfield Complexity</div>
+        <div class="body-text">Developers onboarding to existing projects spend weeks understanding <em>what already exists</em> — reading code instead of writing it.</div>
+        <div style="margin-top:20px">
+          <svg width="100%" height="64" viewBox="0 0 300 64">
+            <rect x="0" y="40" width="180" height="18" rx="4" fill="#E8F0FE"/>
+            <rect x="0" y="40" width="50" height="18" rx="4" fill="#1A73E8"/>
+            <text x="0" y="32" font-size="11" fill="#5F6368">Time spent understanding existing code</text>
+            <text x="52" y="53" font-size="10" fill="#1A73E8" font-weight="500">17%</text>
+            <text x="185" y="53" font-size="10" fill="#5F6368">vs ideal</text>
+          </svg>
+        </div>
+      </div>
+      <div class="card" style="border-top:3px solid var(--amber);padding:32px">
+        <div style="margin-bottom:16px">
+          <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+            <rect width="40" height="40" rx="8" fill="#FEF7E0"/>
+            <rect x="10" y="20" width="4" height="10" rx="1" fill="#F9AB00"/>
+            <rect x="16" y="14" width="4" height="16" rx="1" fill="#F9AB00"/>
+            <rect x="22" y="10" width="4" height="20" rx="1" fill="#F9AB00"/>
+            <rect x="28" y="16" width="4" height="14" rx="1" fill="#F9AB00" opacity=".4"/>
+            <path d="M10 28 Q20 8 30 20" stroke="#EA4335" stroke-width="1.5" stroke-dasharray="3,2" fill="none"/>
+          </svg>
+        </div>
+        <div class="card-title" style="font-size:16px;margin-bottom:12px">Token Waste</div>
+        <div class="body-text">AI coding tools send bloated, uncompressed context to LLMs — teams pay full price for irrelevant file chunks and noise.</div>
+        <div style="margin-top:20px">
+          <svg width="100%" height="64" viewBox="0 0 300 64">
+            <rect x="0" y="40" width="240" height="18" rx="4" fill="#FEF7E0"/>
+            <rect x="0" y="40" width="240" height="18" rx="4" fill="none" stroke="#F9AB00" stroke-width="1"/>
+            <rect x="0" y="40" width="80" height="18" rx="4" fill="#F9AB00"/>
+            <text x="0" y="32" font-size="11" fill="#5F6368">Tokens that actually matter vs sent</text>
+            <text x="82" y="53" font-size="10" fill="#5F6368">~67% wasted on average</text>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ╔══════════════════════════════════════════════════════════╗ -->
+<!-- ║  SLIDE 3 — Our Story Overview                            ║ -->
+<!-- ╚══════════════════════════════════════════════════════════╝ -->
+<div class="slide" data-track="">
+  <div class="topbar">
+    <div class="topbar-left"><div class="topbar-logo"><span style="background:#1A73E8"></span><span style="background:#34A853"></span><span style="background:#F9AB00"></span><span style="background:#EA4335"></span></div><span class="topbar-title">Our Approach</span></div>
+    <span class="topbar-counter">3 / 18</span>
+  </div>
+  <div class="slide-body" style="justify-content:center">
+    <div class="eyebrow">The two-layer solution</div>
+    <div class="headline">We built two layers of productivity</div>
+    <div class="subhead" style="margin-bottom:40px">One for the human. One for the machine. Both working together.</div>
+    <div class="cols cols-2" style="gap:32px">
+      <div class="card" style="border:2px solid var(--green);padding:36px;position:relative">
+        <div class="chip green" style="position:absolute;top:-1px;left:24px;transform:translateY(-50%)">Human Layer</div>
+        <div style="margin-top:8px">
+          <div style="font-family:'Google Sans',sans-serif;font-size:22px;font-weight:700;color:var(--ink);margin-bottom:12px">Understand-Anything</div>
+          <div class="body-text" style="margin-bottom:20px">Knowledge graph of any codebase — visualised in a VS Code extension so developers can understand brownfield projects in minutes, not weeks.</div>
+          <div class="tag-row">
+            <span class="chip green">Knowledge Graph</span>
+            <span class="chip green">VS Code Extension</span>
+            <span class="chip green">Dashboard</span>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="border:2px solid var(--blue);padding:36px;position:relative">
+        <div class="chip blue" style="position:absolute;top:-1px;left:24px;transform:translateY(-50%)">Non-Human Layer</div>
+        <div style="margin-top:8px">
+          <div style="font-family:'Google Sans',sans-serif;font-size:22px;font-weight:700;color:var(--ink);margin-bottom:12px">GateMid Proxy</div>
+          <div class="body-text" style="margin-bottom:20px">Lightweight AI gateway with smart model routing, token compression, security guardrails, and async quality scoring.</div>
+          <div class="tag-row">
+            <span class="chip blue">LiteLLM</span>
+            <span class="chip blue">Headroom</span>
+            <span class="chip blue">Ragas</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:32px;display:flex;align-items:center;gap:0">
+      <div style="flex:1;height:2px;background:linear-gradient(90deg,var(--green),var(--blue))"></div>
+      <div style="padding:0 16px;font-size:12px;color:var(--muted);font-weight:500">TOGETHER: faster developers + cheaper, smarter LLM calls</div>
+      <div style="flex:1;height:2px;background:linear-gradient(90deg,var(--blue),var(--green))"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ╔══════════════════════════════════════════════════════════╗ -->
+<!-- ║  SLIDE 4 — Understand-Anything                           ║ -->
+<!-- ╚══════════════════════════════════════════════════════════╝ -->
+<div class="slide" data-track="Human Layer">
+  <div class="topbar">
+    <div class="topbar-left"><div class="topbar-logo"><span style="background:#1A73E8"></span><span style="background:#34A853"></span><span style="background:#F9AB00"></span><span style="background:#EA4335"></span></div><span class="topbar-title">Part 1 — Human Layer</span></div>
+    <span class="topbar-counter">4 / 18</span>
+  </div>
+  <div class="slide-body">
+    <div class="eyebrow green">Human Layer — Understand-Anything</div>
+    <div class="headline">Help developers see the codebase before writing a single line</div>
+    <div class="cols cols-6040" style="gap:32px;margin-top:24px">
+      <div>
+        <!-- Pipeline of how it works -->
+        <div class="label" style="margin-bottom:16px">How it works</div>
+        <div class="pipeline">
+          <div class="pipe-step">
+            <div class="pipe-left"><div class="pipe-dot" style="background:var(--green)"></div><div class="pipe-line"></div></div>
+            <div class="pipe-content">
+              <div class="pipe-title">Any codebase</div>
+              <div class="pipe-desc">Point Understand-Anything at any repository — Java, Python, TypeScript, and more</div>
+            </div>
+          </div>
+          <div class="pipe-step">
+            <div class="pipe-left"><div class="pipe-dot" style="background:var(--green)"></div><div class="pipe-line"></div></div>
+            <div class="pipe-content">
+              <div class="pipe-title">knowledge-graph.json</div>
+              <div class="pipe-desc">Classes, services, relationships, and call chains extracted into a structured graph</div>
+            </div>
+          </div>
+          <div class="pipe-step">
+            <div class="pipe-left"><div class="pipe-dot" style="background:var(--green)"></div><div class="pipe-line"></div></div>
+            <div class="pipe-content">
+              <div class="pipe-title">Visual Dashboard</div>
+              <div class="pipe-desc">Interactive graph explorer — navigate dependencies, find owners, trace flows</div>
+            </div>
+          </div>
+          <div class="pipe-step">
+            <div class="pipe-left"><div class="pipe-dot" style="background:var(--blue)"></div></div>
+            <div class="pipe-content">
+              <div class="pipe-title">VS Code Extension</div>
+              <div class="pipe-desc">Dashboard accessible in-editor with one click — no context switching, always at hand</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div class="card green-tint">
+          <div class="card-title">For Developers</div>
+          <ul class="blist green">
+            <li>Onboard to brownfield projects in hours, not weeks</li>
+            <li>Visual relationships, not raw file scanning</li>
+            <li>Context you can trust, not guess</li>
+          </ul>
+        </div>
+        <div class="card blue-tint">
+          <div class="card-title">For AI Agents</div>
+          <ul class="blist">
+            <li>Trace class relationships without grepping files</li>
+            <li>Structured graph context = better LLM answers</li>
+            <li>Fewer wasted tokens on irrelevant chunks</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ╔══════════════════════════════════════════════════════════╗ -->
+<!-- ║  SLIDE 5 — Human Evidence                                ║ -->
+<!-- ╚══════════════════════════════════════════════════════════╝ -->
+<div class="slide" data-track="Human Layer">
+  <div class="topbar">
+    <div class="topbar-left"><div class="topbar-logo"><span style="background:#1A73E8"></span><span style="background:#34A853"></span><span style="background:#F9AB00"></span><span style="background:#EA4335"></span></div><span class="topbar-title">Part 1 — Human Evidence</span></div>
+    <span class="topbar-counter">5 / 18</span>
+  </div>
+  <div class="slide-body">
+    <div class="eyebrow green">Evidence — Developer Comprehension Test</div>
+    <div class="headline">Same devs. Same project. 50% faster.</div>
+    <div class="subhead">Controlled test — equal skill levels, equal prior project knowledge, identical comprehension tasks.</div>
+
+    <div class="cols cols-2" style="gap:28px">
+      <!-- Bar chart comparison -->
+      <div class="card">
+        <div class="label" style="margin-bottom:20px">Time to complete comprehension test</div>
+        <svg width="100%" height="200" viewBox="0 0 300 200">
+          <!-- Without -->
+          <rect x="40" y="40" width="80" height="130" rx="6" fill="#DADCE0"/>
+          <text x="80" y="36" text-anchor="middle" font-size="13" font-weight="700" fill="#5F6368">100%</text>
+          <text x="80" y="186" text-anchor="middle" font-size="12" fill="#5F6368">Without</text>
+          <text x="80" y="200" text-anchor="middle" font-size="11" fill="#5F6368">dashboard</text>
+          <!-- With -->
+          <rect x="170" y="105" width="80" height="65" rx="6" fill="#34A853"/>
+          <text x="210" y="101" text-anchor="middle" font-size="13" font-weight="700" fill="#34A853">50%</text>
+          <text x="210" y="186" text-anchor="middle" font-size="12" fill="#5F6368">With</text>
+          <text x="210" y="200" text-anchor="middle" font-size="11" fill="#5F6368">dashboard</text>
+          <!-- Baseline -->
+          <line x1="30" y1="170" x2="290" y2="170" stroke="#DADCE0" stroke-width="1"/>
+        </svg>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:16px;justify-content:center">
+        <div style="display:flex;gap:20px;align-items:center">
+          <div class="stat-block">
+            <div class="stat-number" style="color:var(--green)">50%</div>
+            <div class="stat-label">less time to complete</div>
+          </div>
+          <div style="width:1px;height:60px;background:var(--border)"></div>
+          <div class="stat-block">
+            <div class="stat-number" style="color:var(--blue)">Same</div>
+            <div class="stat-label">accuracy achieved</div>
+          </div>
+        </div>
+        <div class="divider"></div>
+        <div class="card surface">
+          <div class="label" style="margin-bottom:12px">Test design</div>
+          <ul class="blist green" style="gap:8px">
+            <li>Two groups — equal skill, zero prior knowledge of the project</li>
+            <li>One group used Understanding Dashboard via VS Code extension</li>
+            <li>Same comprehension questions for both groups</li>
+            <li>Result: same accuracy, half the time</li>
+          </ul>
+        </div>
+        <div class="card" style="background:var(--green-l);border-color:#b7dfbe">
+          <div style="font-size:14px;color:var(--green);font-weight:500">
+            It's not just speed — developers with the graph knew <em>why</em> their answer was right.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ╔══════════════════════════════════════════════════════════╗ -->
+<!-- ║  SLIDE 6 — AI Agent Evidence                             ║ -->
+<!-- ╚══════════════════════════════════════════════════════════╝ -->
+<div class="slide" data-track="Human Layer">
+  <div class="topbar">
+    <div class="topbar-left"><div class="topbar-logo"><span style="background:#1A73E8"></span><span style="background:#34A853"></span><span style="background:#F9AB00"></span><span style="background:#EA4335"></span></div><span class="topbar-title">Part 1 — AI Agent Evidence</span></div>
+    <span class="topbar-counter">6 / 18</span>
+  </div>
+  <div class="slide-body" style="padding:24px 48px 80px">
+    <div class="eyebrow green">Evidence — Ragas Quality Scoring</div>
+    <div class="headline">The graph makes AI agents smarter too</div>
+    <div class="subhead" style="margin-bottom:20px">Better context structure = measurably better LLM answers, independently scored by Ragas.</div>
+    <div style="display:flex;gap:28px;flex:1;min-height:0">
+
+      <!-- LEFT: embedded Ragas report -->
+      <div style="flex:1.4;display:flex;flex-direction:column;min-width:0">
+        <div class="label" style="margin-bottom:8px">Live Ragas evaluation report — With KG vs Without KG</div>
+        <!-- summary stat bar above iframe -->
+        <div style="display:flex;gap:12px;margin-bottom:10px">
+          <div style="background:var(--green-l);border:1px solid #b7dfbe;border-radius:8px;padding:10px 18px;text-align:center;flex:1">
+            <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">With KG — Faithfulness</div>
+            <div style="font-family:'Google Sans',sans-serif;font-size:22px;font-weight:700;color:var(--green)">61.4%</div>
+          </div>
+          <div style="background:var(--red-l);border:1px solid #f5c6c3;border-radius:8px;padding:10px 18px;text-align:center;flex:1">
+            <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Without KG — Faithfulness</div>
+            <div style="font-family:'Google Sans',sans-serif;font-size:22px;font-weight:700;color:var(--red)">46.4%</div>
+          </div>
+          <div style="background:var(--blue-l);border:1px solid #c5d8fc;border-radius:8px;padding:10px 18px;text-align:center;flex:1">
+            <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Improvement</div>
+            <div style="font-family:'Google Sans',sans-serif;font-size:22px;font-weight:700;color:var(--blue)">+15.0%</div>
+          </div>
+        </div>
+        <div style="flex:1;border:1px solid var(--border);border-radius:10px;overflow:hidden;min-height:0">
+          <iframe id="ragasFrame" srcdoc="" style="width:100%;height:100%;border:none;display:block"></iframe>
+        </div>
+      </div>
+
+      <!-- RIGHT: explanation cards -->
+      <div style="flex:.7;display:flex;flex-direction:column;gap:14px;min-width:0">
+        <div class="card">
+          <div class="label" style="margin-bottom:10px">Why the graph helps agents</div>
+          <ul class="blist green" style="gap:10px">
+            <li>Agents trace class relationships through the structured graph — no need to grep raw source files</li>
+            <li>Cleaner, pre-organised context means the model spends tokens on reasoning, not parsing</li>
+            <li>VS Code extension surfaces graph context directly to coding agents in-editor</li>
+          </ul>
+        </div>
+        <div class="card blue-tint">
+          <div class="card-title">Faithfulness — what it means</div>
+          <div class="body-text">Faithfulness measures whether the AI answer is grounded in the provided context. A score of 1.0 means every claim in the answer can be traced back to the source material. With the knowledge graph, agents get structured, accurate context — so their answers stick to the facts.</div>
+        </div>
+        <div class="card green-tint">
+          <div class="card-title" style="color:var(--green)">Key result</div>
+          <div class="body-text">When the AI agent explored the codebase using the knowledge graph, Faithfulness jumped from 0.929 to 1.000 — a perfect score. The graph isn't just a UX win — it produces verifiably grounded answers.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Inject the Ragas HTML into the iframe srcdoc to avoid CSP issues
+(function() {
+  var ragasHTML = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>RAGAS</title><style>:root{--bg:#ffffff;--surface:#f6f8fa;--surface2:#e8ecf0;--border:#d0d7de;--green:#1a7f37;--yellow:#9a6700;--red:#cf222e;--text:#1f2328;--text-dim:#656d76;--accent:#bf3989;--radius:8px;}*{box-sizing:border-box;margin:0;padding:0;}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);padding:16px;line-height:1.6;font-size:13px;}h1{font-size:1.1rem;font-weight:600;margin-bottom:4px;text-align:center;}h2{font-size:.9rem;font-weight:600;}.subtitle{color:var(--text-dim);font-size:0.75rem;margin-bottom:16px;text-align:center;}.comparison{display:flex;gap:14px;}.col{flex:1;min-width:0;}.col-header{display:flex;align-items:center;gap:8px;margin-bottom:10px;}.col-header h2{font-size:.9rem;font-weight:600;}.badge{font-size:0.58rem;text-transform:uppercase;letter-spacing:0.4px;padding:2px 7px;border-radius:4px;font-weight:600;}.badge-with-kg{background:rgba(26,127,55,0.1);color:var(--green);border:1px solid rgba(26,127,55,0.3);}.badge-no-kg{background:rgba(154,103,0,0.1);color:var(--yellow);border:1px solid rgba(154,103,0,0.3);}.stats-row{display:flex;gap:8px;margin-bottom:10px;}.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:8px 12px;flex:1;}.stat-card .label{font-size:0.58rem;text-transform:uppercase;color:var(--text-dim);letter-spacing:0.4px;margin-bottom:2px;}.stat-card .value{font-size:1rem;font-weight:700;}.metric-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-bottom:12px;}.metric-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:10px;}.metric-card .label{font-size:0.6rem;color:var(--text-dim);margin-bottom:3px;}.metric-card .score{font-size:1rem;font-weight:700;}.token-section{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-bottom:12px;}.token-section h3{font-size:0.65rem;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.3px;color:var(--text-dim);}.token-grid{display:flex;gap:12px;flex-wrap:wrap;}.token-item{display:flex;flex-direction:column;gap:1px;}.token-item .tl{font-size:0.58rem;text-transform:uppercase;color:var(--text-dim);letter-spacing:0.3px;}.token-item .tv{font-size:0.85rem;font-weight:600;font-variant-numeric:tabular-nums;}.token-item .tv.total{color:var(--accent);}.task-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:6px;overflow:hidden;}.task-header{display:flex;align-items:center;gap:6px;padding:8px 10px;cursor:pointer;user-select:none;}.task-header:hover{background:rgba(0,0,0,0.02);}.task-header .toggle{color:var(--text-dim);font-size:0.65rem;width:14px;text-align:center;flex-shrink:0;}.task-header .num{font-size:0.6rem;color:var(--text-dim);flex-shrink:0;min-width:20px;}.task-header .cat{font-size:0.52rem;text-transform:uppercase;letter-spacing:0.4px;background:var(--surface2);padding:1px 5px;border-radius:3px;color:var(--text-dim);flex-shrink:0;}.task-header .q{flex:1;font-size:0.68rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.task-header .mini-scores{display:flex;gap:6px;font-size:0.62rem;flex-shrink:0;}.task-header .mini-scores .ms{text-align:center;min-width:36px;}.task-header .mini-scores .ms .mv{font-weight:600;}.score-green{color:var(--green);font-weight:600;}.score-yellow{color:var(--yellow);font-weight:600;}.score-red{color:var(--red);font-weight:600;}.task-body{display:none;padding:0 10px 10px;border-top:1px solid var(--border);}.task-body.open{display:block;}.score-summary{display:flex;gap:12px;flex-wrap:wrap;padding:8px 0;font-size:0.7rem;}.score-summary .ss-item{display:flex;flex-direction:column;gap:2px;}.score-summary .ss-item .ss-label{font-size:0.58rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.3px;}.resp-box{background:#f0f2f5;border-radius:5px;padding:8px;font-size:0.6rem;max-height:160px;overflow-y:auto;white-space:pre-wrap;font-family:'SF Mono','Cascadia Code','Consolas',monospace;line-height:1.4;margin-top:5px;border-left:3px solid var(--green);}.resp-box .label{display:block;font-size:0.52rem;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px;font-family:-apple-system,sans-serif;font-weight:600;color:var(--text-dim);}.bar-bg{display:inline-block;width:44px;height:7px;background:var(--surface2);border-radius:3px;vertical-align:middle;margin-right:5px;overflow:hidden;}.bar-fill{height:100%;border-radius:3px;min-width:2px;background:var(--green);}.bar-fill.yellow{background:var(--yellow);}.bar-fill.red{background:var(--red);}.text-dim{color:var(--text-dim);}.text-sm{font-size:0.65rem;}.top-summary{display:flex;gap:12px;margin:0 auto 16px;justify-content:center;flex-wrap:wrap;}.summary-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 18px;text-align:center;min-width:160px;}.summary-card .sl{font-size:0.58rem;text-transform:uppercase;color:var(--text-dim);letter-spacing:0.4px;margin-bottom:3px;}.summary-card .sv{font-size:1.1rem;font-weight:700;}</style></head><body><h1>RAGAS Evaluation — With KG vs Without KG</h1><p class="subtitle">2 cases · Faithfulness metric</p><div class="top-summary"><div class="summary-card"><div class="sl">Faithfulness</div><div class="sv" style="color:var(--green)">+15.0%</div><div class="text-dim text-sm">with KG: 61.4% · without: 46.4%</div></div></div><div class="comparison"><div class="col"><div class="col-header"><h2>With Knowledge Graph</h2><span class="badge badge-with-kg">KG</span></div><div class="stats-row"><div class="stat-card"><div class="label">Total Cases</div><div class="value">2</div></div><div class="stat-card"><div class="label">Total Tokens</div><div class="value">58,287</div></div></div><div class="metric-grid"><div class="metric-card"><div class="label">Faithfulness</div><div class="score score-yellow">61.4%</div></div></div><div class="token-section"><h3>Token Usage</h3><div class="token-grid"><div class="token-item"><span class="tv total">37,264</span><span class="tl">prompt</span></div><div class="token-item"><span class="tv total">21,023</span><span class="tl">completion</span></div><div class="token-item"><span class="tv total">58,287</span><span class="tl">total</span></div></div></div><div class="task-card"><div class="task-header" onclick="toggleTask(this)"><span class="toggle">▶</span><span class="num">1</span><span class="cat">complex</span><span class="q">Design a client-side response caching layer…</span><span class="mini-scores"><span class="ms"><span class="mv score-red">0.227</span><br><span class="text-dim text-sm">faithfulness</span></span></span></div><div class="task-body"><div class="score-summary"><div class="ss-item"><span class="ss-label">Faithfulness</span><span style="font-size:1em;font-weight:700;color:var(--red)">0.227</span></div></div><div style="margin-bottom:6px"><div style="display:flex;align-items:center;gap:6px;font-size:0.62rem;margin-bottom:3px"><span style="min-width:90px;color:var(--text-dim)">Faithfulness</span><span class="bar-bg"><span class="bar-fill red" style="width:23%"></span></span><span class="score-red">0.227</span></div></div><div class="resp-box"><span class="label">Response</span>Here's the design:
+
+Cache Key: The existing buildCacheKey is correct. Note apiKey is deliberately excluded.
+
+Cache Invalidation:
+- TTL expiry: Already implemented. 1h default.
+- Periodic sweep: Add pruneExpired() inside set().</div></div></div><div class="task-card"><div class="task-header" onclick="toggleTask(this)"><span class="toggle">▶</span><span class="num">2</span><span class="cat">complex</span><span class="q">Explore the codebase thoroughly. I need to understand…</span><span class="mini-scores"><span class="ms"><span class="mv score-green">1.000</span><br><span class="text-dim text-sm">faithfulness</span></span></span></div><div class="task-body"><div class="score-summary"><div class="ss-item"><span class="ss-label">Faithfulness</span><span style="font-size:1em;font-weight:700;color:var(--green)">1.000</span></div></div><div style="margin-bottom:6px"><div style="display:flex;align-items:center;gap:6px;font-size:0.62rem;margin-bottom:3px"><span style="min-width:90px;color:var(--text-dim)">Faithfulness</span><span class="bar-bg"><span class="bar-fill green" style="width:100%"></span></span><span class="score-green">1.000</span></div></div><div class="resp-box"><span class="label">Response</span>I'll start by exploring the project structure and running multiple searches in parallel. Here is a comprehensive report of my findings.
+
+## 1. CACHING MECHANISM
+The codebase uses a client-side GenerationCache with TTL-based expiry...</div></div></div></div><div class="col"><div class="col-header"><h2>Without Knowledge Graph</h2><span class="badge badge-no-kg">No KG</span></div><div class="stats-row"><div class="stat-card"><div class="label">Total Cases</div><div class="value">2</div></div><div class="stat-card"><div class="label">Total Tokens</div><div class="value">45,323</div></div></div><div class="metric-grid"><div class="metric-card"><div class="label">Faithfulness</div><div class="score score-red">46.4%</div></div></div><div class="token-section"><h3>Token Usage</h3><div class="token-grid"><div class="token-item"><span class="tv total">29,481</span><span class="tl">prompt</span></div><div class="token-item"><span class="tv total">15,842</span><span class="tl">completion</span></div><div class="token-item"><span class="tv total">45,323</span><span class="tl">total</span></div></div></div><div class="task-card"><div class="task-header" onclick="toggleTask(this)"><span class="toggle">▶</span><span class="num">1</span><span class="cat">complex</span><span class="q">Design a client-side response caching layer…</span><span class="mini-scores"><span class="ms"><span class="mv score-red">0.000</span><br><span class="text-dim text-sm">faithfulness</span></span></span></div><div class="task-body"><div class="score-summary"><div class="ss-item"><span class="ss-label">Faithfulness</span><span style="font-size:1em;font-weight:700;color:var(--red)">0.000</span></div></div><div style="margin-bottom:6px"><div style="display:flex;align-items:center;gap:6px;font-size:0.62rem;margin-bottom:3px"><span style="min-width:90px;color:var(--text-dim)">Faithfulness</span><span class="bar-bg"><span class="bar-fill red" style="width:0%"></span></span><span class="score-red">0.000</span></div></div><div class="resp-box"><span class="label">Response</span>## Cache Layer Design
+
+SHA-256(prompt + '|' + type) — hashing prevents oversized keys. Two-tier key resolution:
+1. Primary key (fast lookup): hash → cached response
+2. Secondary index (invalidation)</div></div></div><div class="task-card"><div class="task-header" onclick="toggleTask(this)"><span class="toggle">▶</span><span class="num">2</span><span class="cat">complex</span><span class="q">Explore the codebase thoroughly. I need to understand…</span><span class="mini-scores"><span class="ms"><span class="mv score-green">0.929</span><br><span class="text-dim text-sm">faithfulness</span></span></span></div><div class="task-body"><div class="score-summary"><div class="ss-item"><span class="ss-label">Faithfulness</span><span style="font-size:1em;font-weight:700;color:var(--green)">0.929</span></div></div><div style="margin-bottom:6px"><div style="display:flex;align-items:center;gap:6px;font-size:0.62rem;margin-bottom:3px"><span style="min-width:90px;color:var(--text-dim)">Faithfulness</span><span class="bar-bg"><span class="bar-fill green" style="width:93%"></span></span><span class="score-green">0.929</span></div></div><div class="resp-box"><span class="label">Response</span>I'll systematically explore the codebase with multiple parallel searches.
+
+Here is the comprehensive analysis of PixelForge — architecture, providers, caching, and component structure.</div></div></div></div></div><script>function toggleTask(h){var b=h.nextElementSibling;var t=h.querySelector('.toggle');if(b.classList.contains('open')){b.classList.remove('open');t.textContent='▶';}else{b.classList.add('open');t.textContent='▼';}}<\/script></body></html>`;
+  var frame = document.getElementById('ragasFrame');
+  if (frame) frame.srcdoc = ragasHTML;
+})();
+</script>
+
+<!-- ╔══════════════════════════════════════════════════════════╗ -->
+<!-- ║  SLIDE 7 — GateMid Architecture                          ║ -->
+<!-- ╚══════════════════════════════════════════════════════════╝ -->
+<div class="slide" data-track="Non-Human Layer">
+  <div class="topbar">
+    <div class="topbar-left"><div class="topbar-logo"><span style="background:#1A73E8"></span><span style="background:#34A853"></span><span style="background:#F9AB00"></span><span style="background:#EA4335"></span></div><span class="topbar-title">Part 2 — GateMid Proxy</span></div>
+    <span class="topbar-counter">7 / 18</span>
+  </div>
+  <div class="slide-body" style="padding:24px 48px 80px;gap:0">
+    <div style="margin-bottom:18px">
+      <div class="eyebrow">Non-Human Layer — GateMid</div>
+      <div class="headline">A lightweight LLM gateway for your dev tools</div>
+      <div style="font-size:15px;color:var(--muted);margin-top:4px">Drop-in proxy — Claude Code, Open Code, any OpenAI-compatible SDK. No code changes needed. Powered by <strong style="color:var(--blue)">LiteLLM</strong> (100+ LLM providers).</div>
+    </div>
+
+    <!-- Full architecture layout -->
+    <div style="display:flex;align-items:stretch;gap:0;flex:1;min-height:0">
+
+      <!-- LEFT: Dev Tool -->
+      <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;gap:8px;width:130px;flex-shrink:0">
+        <div style="border:2px solid var(--blue);border-radius:12px;padding:14px 10px;text-align:center;background:var(--blue-l);width:100%">
+          <div style="font-family:'Google Sans',sans-serif;font-size:13px;font-weight:700;color:var(--blue-d);margin-bottom:4px">Dev Tool</div>
+          <div style="font-size:11px;color:var(--muted)">Claude Code</div>
+          <div style="font-size:11px;color:var(--muted)">Open Code</div>
+          <div style="font-size:11px;color:var(--muted)">Any SDK</div>
+        </div>
+      </div>
+
+      <!-- Arrow in -->
+      <div style="display:flex;align-items:center;padding:0 10px;flex-shrink:0">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:3px">
+          <div style="width:40px;height:2px;background:var(--blue)"></div>
+          <div style="width:0;height:0;border-top:5px solid transparent;border-bottom:5px solid transparent;border-left:8px solid var(--blue);margin-left:40px;margin-top:-6px"></div>
+          <div style="font-size:10px;color:var(--muted);margin-top:4px;white-space:nowrap">HTTP request</div>
+        </div>
+      </div>
+
+      <!-- CENTRE: GateMid proxy box -->
+      <div style="flex:1;border:2px solid var(--border);border-radius:16px;background:var(--surface);padding:16px;display:flex;flex-direction:column;gap:10px;min-width:0">
+        <div style="font-family:'Google Sans',sans-serif;font-size:14px;font-weight:700;color:var(--ink);text-align:center;padding-bottom:10px;border-bottom:1px solid var(--border)">
+          GateMid Proxy &nbsp;<code style="font-size:12px;font-weight:400">:4000</code>
+        </div>
+
+        <!-- Layer 1 -->
+        <div style="border:1.5px solid #F5C6C3;border-radius:10px;background:#FCE8E6;padding:12px 16px;display:flex;align-items:center;gap:14px">
+          <div style="width:10px;height:10px;border-radius:50%;background:var(--red);flex-shrink:0"></div>
+          <div style="flex:1">
+            <div style="font-family:'Google Sans',sans-serif;font-size:14px;font-weight:700;color:var(--red)">API Key Masking</div>
+            <div style="font-size:12px;color:#C5221F;margin-top:2px">Secrets and PHI intercepted — never reach the model. 8 regex patterns.</div>
+          </div>
+          <span class="chip red" style="flex-shrink:0;font-size:11px">Outermost</span>
+        </div>
+
+        <!-- Layer 2 -->
+        <div style="border:1.5px solid #F5E19B;border-radius:10px;background:#FEF7E0;padding:12px 16px;display:flex;align-items:center;gap:14px">
+          <div style="width:10px;height:10px;border-radius:50%;background:var(--amber);flex-shrink:0"></div>
+          <div style="flex:1">
+            <div style="font-family:'Google Sans',sans-serif;font-size:14px;font-weight:700;color:#A56600">Headroom Compression</div>
+            <div style="font-size:12px;color:#A56600;margin-top:2px">60–95% token reduction on JSON / FHIR / HL7 payloads. Zero intelligence loss.</div>
+          </div>
+          <span class="chip amber" style="flex-shrink:0;font-size:11px">ASGI layer</span>
+        </div>
+
+        <!-- Optional layer -->
+        <div style="border:1.5px dashed var(--border);border-radius:10px;background:var(--white);padding:12px 16px;display:flex;align-items:center;gap:14px;opacity:.75">
+          <div style="width:10px;height:10px;border-radius:50%;background:var(--border);flex-shrink:0"></div>
+          <div style="flex:1">
+            <div style="font-family:'Google Sans',sans-serif;font-size:14px;font-weight:600;color:var(--muted)">Prompt / Skill Injection</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:2px">External skill enrichment — not shipped yet. Hallucination risk from current skill sources.</div>
+          </div>
+          <span class="chip gray" style="flex-shrink:0;font-size:11px">Future</span>
+        </div>
+
+        <!-- Layer 3 -->
+        <div style="border:1.5px solid #C5D8FC;border-radius:10px;background:var(--blue-l);padding:12px 16px;display:flex;align-items:center;gap:14px">
+          <div style="width:10px;height:10px;border-radius:50%;background:var(--blue);flex-shrink:0"></div>
+          <div style="flex:1">
+            <div style="font-family:'Google Sans',sans-serif;font-size:14px;font-weight:700;color:var(--blue)">Complexity Router</div>
+            <div style="font-size:12px;color:var(--blue-d);margin-top:2px">Sub-ms classifier across 7 dimensions — picks the cheapest capable model per request.</div>
+          </div>
+          <span class="chip blue" style="flex-shrink:0;font-size:11px">LiteLLM engine</span>
+        </div>
+
+        <!-- Layer 4 -->
+        <div style="border:1.5px solid #B7DFBE;border-radius:10px;background:var(--green-l);padding:12px 16px;display:flex;align-items:center;gap:14px">
+          <div style="width:10px;height:10px;border-radius:50%;background:var(--green);flex-shrink:0"></div>
+          <div style="flex:1">
+            <div style="font-family:'Google Sans',sans-serif;font-size:14px;font-weight:700;color:var(--green)">Async Quality Scoring (Ragas)</div>
+            <div style="font-size:12px;color:#2D7A3D;margin-top:2px">Every response scored for Faithfulness, Relevancy, Precision. Stored in Redis. Zero latency impact.</div>
+          </div>
+          <span class="chip green" style="flex-shrink:0;font-size:11px">Innermost</span>
+        </div>
+      </div>
+
+      <!-- Arrow out -->
+      <div style="display:flex;align-items:center;padding:0 10px;flex-shrink:0">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:3px">
+          <div style="width:40px;height:2px;background:var(--green)"></div>
+          <div style="width:0;height:0;border-top:5px solid transparent;border-bottom:5px solid transparent;border-left:8px solid var(--green);margin-left:40px;margin-top:-6px"></div>
+          <div style="font-size:10px;color:var(--muted);margin-top:4px;white-space:nowrap">HTTPS out</div>
+        </div>
+      </div>
+
+      <!-- RIGHT: LLM Provider -->
+      <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;gap:8px;width:130px;flex-shrink:0">
+        <div style="border:2px solid var(--green);border-radius:12px;padding:14px 10px;text-align:center;background:var(--green-l);width:100%">
+          <div style="font-family:'Google Sans',sans-serif;font-size:13px;font-weight:700;color:#1E6E38;margin-bottom:4px">LLM Provider</div>
+          <div style="font-size:11px;color:var(--muted)">Gemini</div>
+          <div style="font-size:11px;color:var(--muted)">DeepSeek</div>
+          <div style="font-size:11px;color:var(--muted)">OpenAI / Azure</div>
+          <div style="font-size:11px;color:var(--muted)">Bedrock...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ╔══════════════════════════════════════════════════════════╗ -->
+<!-- ║  SLIDE 8 — Smart Model Routing                           ║ -->
+<!-- ╚══════════════════════════════════════════════════════════╝ -->
+<div class="slide" data-track="Non-Human Layer">
+  <div class="topbar">
+    <div class="topbar-left"><div class="topbar-logo"><span style="background:#1A73E8"></span><span style="background:#34A853"></span><span style="background:#F9AB00"></span><span style="background:#EA4335"></span></div><span class="topbar-title">GateMid — Feature 1</span></div>
+    <span class="topbar-counter">8 / 18</span>
+  </div>
+  <div class="slide-body">
+    <div class="eyebrow">Feature 1 — Smart Model Routing</div>
+    <div class="headline">Don't pay pro-model prices for a simple question</div>
+    <div class="subhead">Sub-millisecond local classifier — 7 weighted dimensions, zero external API calls.</div>
+    <div class="cols cols-2" style="gap:28px">
+      <div>
+        <div class="label" style="margin-bottom:16px">Routing tiers by complexity score</div>
+        <svg width="100%" height="220" viewBox="0 0 340 220">
+          <!-- Score axis -->
+          <line x1="60" y1="10" x2="60" y2="180" stroke="#DADCE0" stroke-width="1"/>
+          <line x1="60" y1="180" x2="330" y2="180" stroke="#DADCE0" stroke-width="1"/>
+
+          <!-- Bars -->
+          <rect x="70" y="130" width="56" height="50" rx="4" fill="#E8F0FE"/>
+          <text x="98" y="148" text-anchor="middle" font-size="10" fill="#1A73E8" font-weight="600">SIMPLE</text>
+          <text x="98" y="161" text-anchor="middle" font-size="9" fill="#5F6368">0 – 0.20</text>
+          <text x="98" y="175" text-anchor="middle" font-size="9" fill="#5F6368">flash</text>
+
+          <rect x="140" y="100" width="56" height="80" rx="4" fill="#C5D8FC"/>
+          <text x="168" y="118" text-anchor="middle" font-size="10" fill="#1A73E8" font-weight="600">MEDIUM</text>
+          <text x="168" y="131" text-anchor="middle" font-size="9" fill="#5F6368">0.20–0.45</text>
+          <text x="168" y="175" text-anchor="middle" font-size="9" fill="#5F6368">flash</text>
+
+          <rect x="210" y="55" width="56" height="125" rx="4" fill="#1A73E8"/>
+          <text x="238" y="73" text-anchor="middle" font-size="10" fill="white" font-weight="600">COMPLEX</text>
+          <text x="238" y="86" text-anchor="middle" font-size="9" fill="#C5D8FC">0.45–0.65</text>
+          <text x="238" y="175" text-anchor="middle" font-size="9" fill="#5F6368">pro</text>
+
+          <rect x="280" y="20" width="44" height="160" rx="4" fill="#1557B0"/>
+          <text x="302" y="38" text-anchor="middle" font-size="9" fill="white" font-weight="600">REASON</text>
+          <text x="302" y="51" text-anchor="middle" font-size="9" fill="#8EB8F7">0.65+</text>
+          <text x="302" y="175" text-anchor="middle" font-size="9" fill="#5F6368">pro</text>
+
+          <!-- Y axis labels -->
+          <text x="55" y="14" text-anchor="end" font-size="9" fill="#5F6368">score</text>
+          <text x="55" y="185" text-anchor="end" font-size="9" fill="#5F6368">0</text>
+        </svg>
+        <div style="margin-top:8px;font-size:12px;color:var(--muted);font-style:italic">Most daily dev queries land in Simple or Medium — they don't need the most expensive model.</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div class="label">Signals used for classification</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="width:120px;font-size:13px;color:var(--ink2)">Reasoning markers</div>
+            <div class="prog-track" style="flex:1"><div class="prog-fill" style="width:30%;background:var(--blue)"></div></div>
+            <div style="font-size:12px;color:var(--muted);width:30px">30%</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="width:120px;font-size:13px;color:var(--ink2)">Simple indicators</div>
+            <div class="prog-track" style="flex:1"><div class="prog-fill" style="width:15%;background:var(--green)"></div></div>
+            <div style="font-size:12px;color:var(--muted);width:30px">15%</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="width:120px;font-size:13px;color:var(--ink2)">Code presence</div>
+            <div class="prog-track" style="flex:1"><div class="prog-fill" style="width:10%;background:var(--blue)"></div></div>
+            <div style="font-size:12px;color:var(--muted);width:30px">10%</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="width:120px;font-size:13px;color:var(--ink2)">Technical terms</div>
+            <div class="prog-track" style="flex:1"><div class="prog-fill" style="width:10%;background:var(--blue)"></div></div>
+            <div style="font-size:12px;color:var(--muted);width:30px">10%</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="width:120px;font-size:13px;color:var(--ink2)">Token count</div>
+            <div class="prog-track" style="flex:1"><div class="prog-fill" style="width:5%;background:var(--muted)"></div></div>
+            <div style="font-size:12px;color:var(--muted);width:30px">5%</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="width:120px;font-size:13px;color:var(--ink2)">Multi-step patterns</div>
+            <div class="prog-track" style="flex:1"><div class="prog-fill" style="width:5%;background:var(--muted)"></div></div>
+            <div style="font-size:12px;color:var(--muted);width:30px">5%</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="width:120px;font-size:13px;color:var(--ink2)">Question depth</div>
+            <div class="prog-track" style="flex:1"><div class="prog-fill" style="width:5%;background:var(--muted)"></div></div>
+            <div style="font-size:12px;color:var(--muted);width:30px">5%</div>
+          </div>
+        </div>
+        <div class="card amber-tint" style="margin-top:8px">
+          <div style="font-family:'Google Sans',sans-serif;font-size:13px;font-weight:600;color:#C26D00;margin-bottom:4px">Sub-millisecond</div>
+          <div style="font-size:13px;color:var(--ink2)">Pure local rule-based logic — no API call, no model needed to classify.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ╔══════════════════════════════════════════════════════════╗ -->
+<!-- ║  SLIDE 9 — Token Compression                             ║ -->
+<!-- ╚══════════════════════════════════════════════════════════╝ -->
+<div class="slide" data-track="Non-Human Layer">
+  <div class="topbar">
+    <div class="topbar-left"><div class="topbar-logo"><span style="background:#1A73E8"></span><span style="background:#34A853"></span><span style="background:#F9AB00"></span><span style="background:#EA4335"></span></div><span class="topbar-title">GateMid — Feature 2</span></div>
+    <span class="topbar-counter">9 / 18</span>
+  </div>
+  <div class="slide-body">
+    <div class="eyebrow">Feature 2 — Token Compression</div>
+    <div class="headline">60–95% fewer tokens. Same answer quality.</div>
+    <div class="subhead">Headroom ASGI middleware compresses context before it reaches the LLM — zero intelligence loss.</div>
+    <div class="cols cols-2" style="gap:28px">
+      <div>
+        <!-- Before / After token visual -->
+        <div class="label" style="margin-bottom:16px">Tokens sent — before vs after compression</div>
+        <svg width="100%" height="200" viewBox="0 0 300 200">
+          <!-- Before -->
+          <text x="70" y="16" text-anchor="middle" font-size="11" fill="#5F6368">Before</text>
+          <rect x="20" y="24" width="100" height="140" rx="6" fill="#DADCE0"/>
+          <!-- signal portion -->
+          <rect x="20" y="24" width="100" height="30" rx="6" fill="#1A73E8"/>
+          <text x="70" y="108" text-anchor="middle" font-size="10" fill="#5F6368">noise</text>
+          <text x="70" y="36" text-anchor="middle" font-size="10" fill="white">signal</text>
+          <!-- After -->
+          <text x="220" y="16" text-anchor="middle" font-size="11" fill="#5F6368">After</text>
+          <rect x="170" y="110" width="100" height="54" rx="6" fill="#DADCE0" opacity=".3"/>
+          <rect x="170" y="110" width="100" height="30" rx="6" fill="#1A73E8"/>
+          <text x="220" y="122" text-anchor="middle" font-size="10" fill="white">signal</text>
+          <text x="220" y="150" text-anchor="middle" font-size="10" fill="#DADCE0">noise ↓</text>
+          <!-- Arrow -->
+          <path d="M130 94 L160 94" stroke="#34A853" stroke-width="2" marker-end="url(#arr2)"/>
+          <text x="145" y="88" text-anchor="middle" font-size="10" fill="#34A853" font-weight="600">compress</text>
+          <defs>
+            <marker id="arr2" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L6,3 z" fill="#34A853"/>
+            </marker>
+          </defs>
+          <!-- stat -->
+          <text x="145" y="185" text-anchor="middle" font-size="22" font-weight="700" fill="#34A853">60–95%</text>
+          <text x="145" y="200" text-anchor="middle" font-size="11" fill="#5F6368">token reduction</text>
+        </svg>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div class="label">Three compression strategies</div>
+        <div class="card">
+          <div class="card-title" style="color:var(--blue)">SmartCrusher</div>
+          <div class="body-text">Compresses JSON, FHIR, and HL7 payloads — purpose-built for the verbose structured data common in healthcare codebases.</div>
+        </div>
+        <div class="card">
+          <div class="card-title" style="color:var(--blue)">CodeCompressor</div>
+          <div class="body-text">AST-based compression for source code — strips boilerplate while preserving semantic meaning.</div>
+        </div>
+        <div class="card">
+          <div class="card-title" style="color:var(--blue)">CacheAligner</div>
+          <div class="body-text">Aligns prompts to KV cache prefixes — reduces redundant computation on repeated context patterns.</div>
+        </div>
+        <div class="quote">
+          "Compress tool outputs, logs, files, and RAG chunks before they reach the LLM. 60–95% fewer tokens, same answers."
+          <cite>— Headroom, 16k+ stars on GitHub</cite>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ╔══════════════════════════════════════════════════════════╗ -->
+<!-- ║  SLIDE 10 — Guardrails                                   ║ -->
+<!-- ╚══════════════════════════════════════════════════════════╝ -->
+<div class="slide" data-track="Non-Human Layer">
+  <div class="topbar">
+    <div class="topbar-left"><div class="topbar-logo"><span style="background:#1A73E8"></span><span style="background:#34A853"></span><span style="background:#F9AB00"></span><span style="background:#EA4335"></span></div><span class="topbar-title">GateMid — Feature 3</span></div>
+    <span class="topbar-counter">10 / 18</span>
+  </div>
+  <div class="slide-body">
+    <div class="eyebrow">Feature 3 — Security Guardrails</div>
+    <div class="headline">Your secrets never reach the model. Ever.</div>
+    <div class="subhead">Custom ASGI middleware intercepts every request before it touches the LLM — masking keys and sensitive data.</div>
+    <div class="cols cols-2" style="gap:28px">
+      <div>
+        <div class="label" style="margin-bottom:16px">Request flow with masking</div>
+        <div class="pipeline">
+          <div class="pipe-step">
+            <div class="pipe-left"><div class="pipe-dot" style="background:var(--blue)"></div><div class="pipe-line"></div></div>
+            <div class="pipe-content">
+              <div class="pipe-title">Inbound request</div>
+              <div class="pipe-desc">Dev tool sends prompt — may contain API keys, tokens, or PHI in context</div>
+            </div>
+          </div>
+          <div class="pipe-step">
+            <div class="pipe-left"><div class="pipe-dot" style="background:var(--red)"></div><div class="pipe-line"></div></div>
+            <div class="pipe-content">
+              <div class="pipe-title">ApiKeyMaskingMiddleware</div>
+              <div class="pipe-desc">8 regex patterns fire — Gemini, HuggingFace, GitHub, AWS, OpenAI/Anthropic <code>sk-</code>, Bearer, generic 36+ char strings</div>
+            </div>
+          </div>
+          <div class="pipe-step">
+            <div class="pipe-left"><div class="pipe-dot" style="background:var(--green)"></div></div>
+            <div class="pipe-content">
+              <div class="pipe-title">Clean request forwarded</div>
+              <div class="pipe-desc">Key type prefix preserved, sensitive value masked — model sees <code>sk-****[REDACTED]</code></div>
+            </div>
+          </div>
+        </div>
+        <div class="card" style="border:1px dashed var(--border);background:var(--surface);margin-top:8px">
+          <div class="label" style="margin-bottom:8px">Image placeholder</div>
+          <div style="font-size:13px;color:var(--muted)">Add your masking demo screenshot here — replace this card with an &lt;img&gt; tag.</div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div class="label">Patterns covered</div>
+        <div class="tag-row">
+          <span class="chip red">Gemini AIzaSy</span>
+          <span class="chip red">HuggingFace hf_</span>
+          <span class="chip red">GitHub tokens</span>
+          <span class="chip red">AWS access keys</span>
+          <span class="chip red">sk- keys</span>
+          <span class="chip red">Bearer tokens</span>
+          <span class="chip red">Generic 36+ char</span>
+        </div>
+        <div class="divider"></div>
+        <div class="card" style="border-top:3px solid var(--red)">
+          <div class="card-title">Beyond API Keys — PHI / PII</div>
+          <ul class="blist" style="gap:10px">
+            <li>Same middleware pattern is directly extensible to patient data</li>
+            <li>Patient names, MRNs, DOBs, diagnosis codes — masked before the LLM sees them</li>
+            <li>Critical for FHIR/HL7 workflows operating under HIPAA</li>
+            <li>Guardrails become a compliance layer, not just a dev convenience</li>
+          </ul>
+        </div>
+        <div class="card amber-tint">
+          <div style="font-size:13px;color:#C26D00;font-weight:500">For healthcare teams</div>
+          <div style="font-size:13px;color:var(--ink2);margin-top:4px">This isn't a nice-to-have — it's a compliance requirement. The proxy makes it automatic.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ╔══════════════════════════════════════════════════════════╗ -->
+<!-- ║  SLIDE 11 — Async Quality Scoring                        ║ -->
+<!-- ╚══════════════════════════════════════════════════════════╝ -->
+<div class="slide" data-track="Non-Human Layer">
+  <div class="topbar">
+    <div class="topbar-left"><div class="topbar-logo"><span style="background:#1A73E8"></span><span style="background:#34A853"></span><span style="background:#F9AB00"></span><span style="background:#EA4335"></span></div><span class="topbar-title">GateMid — Feature 4</span></div>
+    <span class="topbar-counter">11 / 18</span>
+  </div>
+  <div class="slide-body">
+    <div class="eyebrow">Feature 4 — Async Quality Scoring</div>
+    <div class="headline">Know which prompts are working — and which aren't</div>
+    <div class="subhead">Every response is scored by Ragas asynchronously — zero latency impact, full observability.</div>
+    <div class="cols cols-2" style="gap:28px">
+      <div>
+        <div class="label" style="margin-bottom:14px">Scoring pipeline</div>
+        <div class="pipeline">
+          <div class="pipe-step">
+            <div class="pipe-left"><div class="pipe-dot" style="background:var(--blue)"></div><div class="pipe-line"></div></div>
+            <div class="pipe-content"><div class="pipe-title">LLM responds</div><div class="pipe-desc">Response returned to the developer immediately — no wait</div></div>
+          </div>
+          <div class="pipe-step">
+            <div class="pipe-left"><div class="pipe-dot" style="background:var(--blue)"></div><div class="pipe-line"></div></div>
+            <div class="pipe-content"><div class="pipe-title">RagasLogger enqueues</div><div class="pipe-desc">Question + answer pushed to Redis <code>eval:pending</code> queue</div></div>
+          </div>
+          <div class="pipe-step">
+            <div class="pipe-left"><div class="pipe-dot" style="background:var(--blue)"></div><div class="pipe-line"></div></div>
+            <div class="pipe-content"><div class="pipe-title">Eval-worker scores</div><div class="pipe-desc">Separate container — DeepSeek as judge, Gemini for embeddings</div></div>
+          </div>
+          <div class="pipe-step">
+            <div class="pipe-left"><div class="pipe-dot" style="background:var(--green)"></div></div>
+            <div class="pipe-content"><div class="pipe-title">Results in Redis</div><div class="pipe-desc">Scored records + leaderboards queryable any time by dev or system</div></div>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div class="label">Three Ragas metrics</div>
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <span class="card-title" style="margin-bottom:0">Faithfulness</span>
+            <span class="chip blue">40%</span>
+          </div>
+          <div class="body-text">Is the answer grounded in the provided context?</div>
+        </div>
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <span class="card-title" style="margin-bottom:0">Answer Relevancy</span>
+            <span class="chip blue">40%</span>
+          </div>
+          <div class="body-text">Does it actually answer the question asked?</div>
+        </div>
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <span class="card-title" style="margin-bottom:0">Context Precision</span>
+            <span class="chip gray">20%</span>
+          </div>
+          <div class="body-text">Does the context contain only relevant information?</div>
+        </div>
+        <div class="card green-tint">
+          <div class="card-title">What to do with the scores</div>
+          <ul class="blist green" style="gap:6px">
+            <li>Surface top-performing sessions — promote those patterns team-wide</li>
+            <li>Spot systematically poor categories — fix prompts upstream</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ╔══════════════════════════════════════════════════════════╗ -->
+<!-- ║  SLIDE 12 — Performance                                  ║ -->
+<!-- ╚══════════════════════════════════════════════════════════╝ -->
+<div class="slide" data-track="Non-Human Layer">
+  <div class="topbar">
+    <div class="topbar-left"><div class="topbar-logo"><span style="background:#1A73E8"></span><span style="background:#34A853"></span><span style="background:#F9AB00"></span><span style="background:#EA4335"></span></div><span class="topbar-title">GateMid — Performance</span></div>
+    <span class="topbar-counter">12 / 18</span>
+  </div>
+  <div class="slide-body" style="justify-content:center">
+    <div class="eyebrow">Lightweight by design</div>
+    <div class="headline">Sub-50ms proxy overhead per request</div>
+    <div class="subhead">Every feature runs without adding meaningful latency to the developer's workflow.</div>
+    <div class="cols cols-2" style="gap:28px;margin-top:8px">
+      <!-- Latency breakdown visual -->
+      <div class="card">
+        <div class="label" style="margin-bottom:20px">Request latency breakdown</div>
+        <svg width="100%" height="200" viewBox="0 0 300 200">
+          <!-- Timeline bar -->
+          <rect x="20" y="80" width="260" height="32" rx="6" fill="#E8F0FE"/>
+          <!-- GateMid portion ~4% -->
+          <rect x="20" y="80" width="10" height="32" rx="3" fill="#1A73E8"/>
+          <!-- LLM portion -->
+          <rect x="30" y="80" width="250" height="32" rx="3" fill="#DADCE0"/>
+          <text x="35" y="101" font-size="10" fill="#5F6368">LLM inference (1,000–10,000ms)</text>
+          <text x="20" y="135" font-size="10" fill="#1A73E8" font-weight="600">Proxy</text>
+          <text x="20" y="148" font-size="10" fill="#1A73E8">&lt;50ms</text>
+
+          <!-- Stats -->
+          <text x="150" y="20" text-anchor="middle" font-size="28" font-weight="700" fill="#1A73E8">&lt; 50ms</text>
+          <text x="150" y="40" text-anchor="middle" font-size="12" fill="#5F6368">total proxy overhead</text>
+
+          <line x1="20" y1="165" x2="280" y2="165" stroke="#DADCE0" stroke-width="1"/>
+          <text x="20" y="180" font-size="10" fill="#5F6368">0ms</text>
+          <text x="270" y="180" font-size="10" text-anchor="end" fill="#5F6368">10,000ms</text>
+        </svg>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div class="cols cols-2" style="gap:12px">
+          <div class="card" style="text-align:center;padding:20px 12px">
+            <div class="stat-number" style="font-size:28px;color:var(--blue)">&lt; 1ms</div>
+            <div class="stat-label">routing classification</div>
+          </div>
+          <div class="card" style="text-align:center;padding:20px 12px">
+            <div class="stat-number" style="font-size:28px;color:var(--green)">0ms</div>
+            <div class="stat-label">scoring impact</div>
+          </div>
+          <div class="card" style="text-align:center;padding:20px 12px">
+            <div class="stat-number" style="font-size:28px;color:var(--amber)">95%</div>
+            <div class="stat-label">max token reduction</div>
+          </div>
+          <div class="card" style="text-align:center;padding:20px 12px">
+            <div class="stat-number" style="font-size:28px;color:var(--blue)">100+</div>
+            <div class="stat-label">LLM providers via LiteLLM</div>
+          </div>
+        </div>
+        <div class="card surface">
+          <ul class="blist" style="gap:8px">
+            <li>Routing: local logic only — sub-millisecond, no API call</li>
+            <li>Scoring: separate container — never blocks response</li>
+            <li>Compression: ASGI-level — parallel with request processing</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ╔══════════════════════════════════════════════════════════╗ -->
+<!-- ║  SLIDE 13 — Deployment Flexibility                       ║ -->
+<!-- ╚══════════════════════════════════════════════════════════╝ -->
+<div class="slide" data-track="Non-Human Layer">
+  <div class="topbar">
+    <div class="topbar-left"><div class="topbar-logo"><span style="background:#1A73E8"></span><span style="background:#34A853"></span><span style="background:#F9AB00"></span><span style="background:#EA4335"></span></div><span class="topbar-title">GateMid — Deployment</span></div>
+    <span class="topbar-counter">13 / 18</span>
+  </div>
+  <div class="slide-body" style="justify-content:center">
+    <div class="eyebrow">Deployment Flexibility</div>
+    <div class="headline">Run it your way — personal tool or org-wide platform</div>
+    <div class="subhead">The same stack scales from a single developer's machine to a company-wide LLM control layer.</div>
+    <div class="cols cols-2" style="gap:28px;margin-top:8px">
+      <div class="card" style="border-top:3px solid var(--blue);padding:32px">
+        <div class="label" style="margin-bottom:16px;color:var(--blue)">Local Dev Tool</div>
+        <div class="pipeline">
+          <div class="pipe-step">
+            <div class="pipe-left"><div class="pipe-dot" style="background:var(--blue)"></div><div class="pipe-line"></div></div>
+            <div class="pipe-content"><div class="pipe-title">Run on your machine</div><div class="pipe-desc"><code>docker compose up</code> — proxy starts on <code>localhost:4000</code></div></div>
+          </div>
+          <div class="pipe-step">
+            <div class="pipe-left"><div class="pipe-dot" style="background:var(--blue)"></div><div class="pipe-line"></div></div>
+            <div class="pipe-content"><div class="pipe-title">Point Claude Code at it</div><div class="pipe-desc">Set <code>ANTHROPIC_BASE_URL</code> — all requests flow through GateMid</div></div>
+          </div>
+          <div class="pipe-step">
+            <div class="pipe-left"><div class="pipe-dot" style="background:var(--blue)"></div></div>
+            <div class="pipe-content"><div class="pipe-title">Personal cost savings</div><div class="pipe-desc">Smart routing + compression work immediately — no config needed</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="border-top:3px solid var(--green);padding:32px">
+        <div class="label" style="margin-bottom:16px;color:var(--green)">Org-Wide Platform</div>
+        <div class="pipeline">
+          <div class="pipe-step">
+            <div class="pipe-left"><div class="pipe-dot" style="background:var(--green)"></div><div class="pipe-line"></div></div>
+            <div class="pipe-content"><div class="pipe-title">Deploy to shared server</div><div class="pipe-desc">Organisation controls all LLM traffic centrally</div></div>
+          </div>
+          <div class="pipe-step">
+            <div class="pipe-left"><div class="pipe-dot" style="background:var(--green)"></div><div class="pipe-line"></div></div>
+            <div class="pipe-content"><div class="pipe-title">Per-user API keys and model lists</div><div class="pipe-desc">Assign model allow-lists and rate limits per team or role</div></div>
+          </div>
+          <div class="pipe-step">
+            <div class="pipe-left"><div class="pipe-dot" style="background:var(--green)"></div></div>
+            <div class="pipe-content"><div class="pipe-title">Audit trail + compliance</div><div class="pipe-desc">Usage dashboard, quality trends, full log — critical for healthcare</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ╔══════════════════════════════════════════════════════════╗ -->
+<!-- ║  SLIDE 14 — What We Built                                ║ -->
+<!-- ╚══════════════════════════════════════════════════════════╝ -->
+<div class="slide" data-track="">
+  <div class="topbar">
+    <div class="topbar-left"><div class="topbar-logo"><span style="background:#1A73E8"></span><span style="background:#34A853"></span><span style="background:#F9AB00"></span><span style="background:#EA4335"></span></div><span class="topbar-title">What We Built</span></div>
+    <span class="topbar-counter">14 / 18</span>
+  </div>
+  <div class="slide-body" style="justify-content:center">
+    <div class="eyebrow">Delivered in one hackathon</div>
+    <div class="headline">Two tools, shipped</div>
+    <div class="cols cols-2" style="gap:28px;margin-top:24px">
+      <div class="card" style="border:2px solid var(--green);padding:32px">
+        <div class="chip green" style="margin-bottom:16px">Human Layer</div>
+        <div style="font-family:'Google Sans',sans-serif;font-size:20px;font-weight:700;color:var(--ink);margin-bottom:8px">Understand-Anything Dashboard</div>
+        <div style="font-family:'Google Sans',sans-serif;font-size:14px;font-weight:500;color:var(--green);margin-bottom:16px">+ VS Code Extension</div>
+        <div class="tag-row" style="margin-bottom:16px">
+          <span class="chip gray">Understand-Anything</span>
+          <span class="chip gray">VS Code Extension API</span>
+        </div>
+        <ul class="blist green" style="gap:8px">
+          <li>50% faster codebase comprehension — same accuracy</li>
+          <li>Knowledge graph accessible in-editor with one click</li>
+          <li>Better context for AI agents — Ragas scores improved</li>
+        </ul>
+      </div>
+      <div class="card" style="border:2px solid var(--blue);padding:32px">
+        <div class="chip blue" style="margin-bottom:16px">Non-Human Layer</div>
+        <div style="font-family:'Google Sans',sans-serif;font-size:20px;font-weight:700;color:var(--ink);margin-bottom:8px">GateMid Proxy</div>
+        <div style="font-family:'Google Sans',sans-serif;font-size:14px;font-weight:500;color:var(--blue);margin-bottom:16px">Lightweight AI gateway</div>
+        <div class="tag-row" style="margin-bottom:16px">
+          <span class="chip gray">Python</span>
+          <span class="chip gray">LiteLLM</span>
+          <span class="chip gray">Headroom</span>
+          <span class="chip gray">Ragas</span>
+          <span class="chip gray">Redis</span>
+          <span class="chip gray">Docker</span>
+        </div>
+        <ul class="blist" style="gap:8px">
+          <li>Smart routing + 60–95% token compression</li>
+          <li>Guardrails masking secrets and PHI</li>
+          <li>Async quality scoring — &lt;50ms proxy overhead</li>
+        </ul>
+      </div>
+    </div>
+    <div style="margin-top:28px;display:grid;grid-template-columns:repeat(5,1fr);gap:12px">
+      <div class="card" style="text-align:center;padding:14px 8px;border-color:var(--green-l)"><div style="font-size:12px;color:var(--green);font-weight:600">Faster onboarding</div></div>
+      <div class="card" style="text-align:center;padding:14px 8px;border-color:var(--blue-l)"><div style="font-size:12px;color:var(--blue);font-weight:600">Better AI context</div></div>
+      <div class="card" style="text-align:center;padding:14px 8px;border-color:var(--amber-l)"><div style="font-size:12px;color:#C26D00;font-weight:600">Lower token cost</div></div>
+      <div class="card" style="text-align:center;padding:14px 8px;border-color:var(--red-l)"><div style="font-size:12px;color:var(--red);font-weight:600">Secrets protected</div></div>
+      <div class="card" style="text-align:center;padding:14px 8px;border-color:var(--green-l)"><div style="font-size:12px;color:var(--green);font-weight:600">Quality feedback</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ╔══════════════════════════════════════════════════════════╗ -->
+<!-- ║  SLIDE 15 — Future Development                           ║ -->
+<!-- ╚══════════════════════════════════════════════════════════╝ -->
+<div class="slide" data-track="Roadmap">
+  <div class="topbar">
+    <div class="topbar-left"><div class="topbar-logo"><span style="background:#1A73E8"></span><span style="background:#34A853"></span><span style="background:#F9AB00"></span><span style="background:#EA4335"></span></div><span class="topbar-title">Future Development</span></div>
+    <span class="topbar-counter">15 / 18</span>
+  </div>
+  <div class="slide-body" style="padding:24px 48px 80px">
+    <div class="eyebrow">What comes next</div>
+    <div class="headline">The feedback loop closes itself</div>
+    <div class="subhead" style="margin-bottom:20px">Architecture built for extensibility — the most compelling next step is auto-improvement.</div>
+
+    <div style="display:flex;gap:32px;flex:1;min-height:0">
+
+      <!-- LEFT: auto-improvement loop as HTML pipeline -->
+      <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+        <div class="label" style="margin-bottom:14px">Auto-improvement loop via Ragas logs</div>
+
+        <!-- Node 1 -->
+        <div style="border:1.5px solid #C5D8FC;border-radius:10px;background:var(--blue-l);padding:12px 18px;display:flex;align-items:center;gap:12px">
+          <div style="width:10px;height:10px;border-radius:50%;background:var(--blue);flex-shrink:0"></div>
+          <div>
+            <div style="font-family:'Google Sans',sans-serif;font-size:14px;font-weight:700;color:var(--blue)">LLM Response</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:1px">Returned to developer immediately — no waiting</div>
+          </div>
+        </div>
+
+        <!-- Connector -->
+        <div style="display:flex;justify-content:center;padding:4px 0"><div style="width:2px;height:20px;background:var(--border)"></div></div>
+
+        <!-- Node 2 -->
+        <div style="border:1.5px solid #C5D8FC;border-radius:10px;background:var(--blue-l);padding:12px 18px;display:flex;align-items:center;gap:12px">
+          <div style="width:10px;height:10px;border-radius:50%;background:var(--blue);flex-shrink:0"></div>
+          <div>
+            <div style="font-family:'Google Sans',sans-serif;font-size:14px;font-weight:700;color:var(--blue)">Ragas Scoring</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:1px">Async eval-worker — Faithfulness, Relevancy, Precision. Zero latency impact.</div>
+          </div>
+        </div>
+
+        <!-- Connector -->
+        <div style="display:flex;justify-content:center;padding:4px 0"><div style="width:2px;height:20px;background:var(--border)"></div></div>
+
+        <!-- Node 3 -->
+        <div style="border:1.5px solid #C5D8FC;border-radius:10px;background:var(--blue-l);padding:12px 18px;display:flex;align-items:center;gap:12px">
+          <div style="width:10px;height:10px;border-radius:50%;background:var(--blue);flex-shrink:0"></div>
+          <div>
+            <div style="font-family:'Google Sans',sans-serif;font-size:14px;font-weight:700;color:var(--blue)">Redis — Scored Sessions</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:1px">Leaderboards, call records, per-category rankings — queryable any time</div>
+          </div>
+        </div>
+
+        <!-- Connector splits into two -->
+        <div style="display:flex;justify-content:center;padding:4px 0"><div style="width:2px;height:20px;background:var(--border)"></div></div>
+
+        <!-- Node 4 + 5 side by side -->
+        <div style="display:flex;gap:12px">
+          <div style="flex:1;border:1.5px solid #F5E19B;border-radius:10px;background:var(--amber-l);padding:12px 14px">
+            <div style="font-family:'Google Sans',sans-serif;font-size:13px;font-weight:700;color:#A56600;margin-bottom:4px">Auto-Improve Job</div>
+            <div style="font-size:12px;color:var(--muted)">Reads top-scoring sessions, extracts prompt structures and context patterns</div>
+          </div>
+          <div style="flex:1;border:1.5px solid #B7DFBE;border-radius:10px;background:var(--green-l);padding:12px 14px">
+            <div style="font-family:'Google Sans',sans-serif;font-size:13px;font-weight:700;color:var(--green);margin-bottom:4px">Skill Templates</div>
+            <div style="font-size:12px;color:var(--muted)">Auto-generated — injected into GateMid Skill Injection layer for future requests</div>
+          </div>
+        </div>
+
+        <!-- Feedback arrow label -->
+        <div style="margin-top:12px;display:flex;align-items:center;gap:10px;padding:8px 14px;border-radius:8px;background:var(--green-l);border:1px dashed #B7DFBE">
+          <div style="width:2px;height:32px;background:linear-gradient(to bottom,var(--green),var(--blue));border-radius:1px;flex-shrink:0"></div>
+          <div style="font-size:12px;color:var(--green);font-weight:500">Feedback loop — better responses raise Ragas scores, which generate better templates, which improve future responses</div>
+        </div>
+      </div>
+
+      <!-- RIGHT: other planned directions -->
+      <div style="flex:1;display:flex;flex-direction:column;gap:12px;min-width:0">
+        <div class="label" style="margin-bottom:2px">Other planned directions</div>
+
+        <div class="card" style="border-left:3px solid var(--green)">
+          <div class="card-title" style="color:var(--green)">Domain Graph Enrichment</div>
+          <div class="body-text">Java post-processor adding Spring stereotypes, JPA relationships, FHIR resource classification, and HL7 message type detection — producing a <code>domain-graph.json</code> purpose-built for healthcare codebases.</div>
+        </div>
+
+        <div class="card" style="border-left:3px solid var(--red)">
+          <div class="card-title" style="color:var(--red)">PHI / PII Masking Rules</div>
+          <div class="body-text">Extend the existing guardrail middleware beyond API keys — patient names, MRNs, DOBs, and diagnosis codes masked before the LLM sees them. Full HIPAA-aligned compliance layer.</div>
+        </div>
+
+        <div class="card" style="border-left:3px solid var(--muted)">
+          <div class="card-title" style="color:var(--muted)">Skill Injection Layer</div>
+          <div class="body-text">Once a reliable, low-hallucination skill source is established — inject domain-specific instructions and few-shot examples into every request automatically via GateMid.</div>
+        </div>
+
+        <div class="card" style="border-left:3px solid var(--blue)">
+          <div class="card-title" style="color:var(--blue)">Multi-Tenant Dashboard</div>
+          <div class="body-text">Per-user token spend, model usage breakdown, quality trends over time — giving organisations full visibility and control over how their teams use LLM tools.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ╔══════════════════════════════════════════════════════════╗ -->
+<!-- ║  SLIDE 16 — Closing                                      ║ -->
+<!-- ╚══════════════════════════════════════════════════════════╝ -->
+<div class="slide" data-track="">
+  <div class="topbar">
+    <div class="topbar-left"><div class="topbar-logo"><span style="background:#1A73E8"></span><span style="background:#34A853"></span><span style="background:#F9AB00"></span><span style="background:#EA4335"></span></div><span class="topbar-title">Closing</span></div>
+    <span class="topbar-counter">16 / 18</span>
+  </div>
+  <div class="slide-body" style="justify-content:center">
+    <div style="text-align:center;max-width:640px;margin:0 auto">
+      <div class="eyebrow" style="text-align:center;margin-bottom:20px">Productivity and Token</div>
+      <div class="headline" style="font-size:clamp(32px,4vw,52px);margin-bottom:20px">Two problems.<br>One stack.</div>
+      <div class="subhead" style="margin-bottom:40px">The best AI dev workflow isn't just about the LLM you choose — it's about the infrastructure around it.</div>
+      <div class="cols cols-2" style="gap:16px;text-align:left;margin-bottom:36px">
+        <div class="card green-tint" style="padding:20px">
+          <div class="card-title" style="color:var(--green);margin-bottom:10px">Understand-Anything + VS Code</div>
+          <div style="font-size:13px;color:var(--ink2)">Open for collaboration — extensible to any language supported by Understand-Anything</div>
+        </div>
+        <div class="card blue-tint" style="padding:20px">
+          <div class="card-title" style="color:var(--blue);margin-bottom:10px">GateMid Proxy</div>
+          <div style="font-size:13px;color:var(--ink2)">Self-hosted and extensible — add guardrail patterns, models, or org-wide deployment</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:0;margin-bottom:36px">
+        <div style="flex:1;height:2px;background:linear-gradient(90deg,transparent,var(--green))"></div>
+        <div style="padding:0 20px;font-size:13px;color:var(--muted);font-weight:500;white-space:nowrap">Try it on your team this week</div>
+        <div style="flex:1;height:2px;background:linear-gradient(90deg,var(--blue),transparent)"></div>
+      </div>
+      <div class="tag-row" style="justify-content:center">
+        <span class="chip blue">Understand-Anything</span>
+        <span class="chip blue">GateMid</span>
+        <span class="chip blue">LiteLLM</span>
+        <span class="chip blue">Headroom</span>
+        <span class="chip blue">Ragas</span>
+        <span class="chip blue">VS Code Extension</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ╔══════════════════════════════════════════════════════════╗ -->
+<!-- ║  SLIDE 17 — Live Demo                                    ║ -->
+<!-- ╚══════════════════════════════════════════════════════════╝ -->
+<div class="slide" data-track="Demo">
+  <div class="topbar">
+    <div class="topbar-left"><div class="topbar-logo"><span style="background:#1A73E8"></span><span style="background:#34A853"></span><span style="background:#F9AB00"></span><span style="background:#EA4335"></span></div><span class="topbar-title">Live Demo</span></div>
+    <span class="topbar-counter">17 / 18</span>
+  </div>
+  <div class="slide-body" style="justify-content:center;align-items:center;padding:40px 72px 80px">
+    <div style="width:100%;max-width:860px">
+      <div class="eyebrow" style="text-align:center;margin-bottom:12px">Live Demo</div>
+      <div class="headline" style="text-align:center;margin-bottom:32px">See it in action</div>
+      <div class="cols cols-2" style="gap:24px;margin-bottom:28px">
+
+        <!-- Demo 1 -->
+        <div class="card" style="border-top:3px solid var(--green);padding:28px">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+            <div style="width:36px;height:36px;border-radius:8px;background:var(--green-l);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="2" width="14" height="14" rx="3" stroke="#34A853" stroke-width="1.5"/><path d="M5 9h8M9 5v8" stroke="#34A853" stroke-width="1.5" stroke-linecap="round"/></svg>
+            </div>
+            <div>
+              <div style="font-family:'Google Sans',sans-serif;font-size:15px;font-weight:700;color:var(--ink)">Understand-Anything</div>
+              <div style="font-size:12px;color:var(--muted)">Human layer</div>
+            </div>
+          </div>
+          <div class="pipeline">
+            <div class="pipe-step">
+              <div class="pipe-left"><div class="pipe-dot" style="background:var(--green)"></div><div class="pipe-line"></div></div>
+              <div class="pipe-content"><div class="pipe-title">Open VS Code extension</div><div class="pipe-desc">One click from the editor sidebar — no terminal, no separate tool</div></div>
+            </div>
+            <div class="pipe-step">
+              <div class="pipe-left"><div class="pipe-dot" style="background:var(--green)"></div><div class="pipe-line"></div></div>
+              <div class="pipe-content"><div class="pipe-title">Browse the knowledge graph</div><div class="pipe-desc">Explore classes, services, call chains and relationships visually</div></div>
+            </div>
+            <div class="pipe-step">
+              <div class="pipe-left"><div class="pipe-dot" style="background:var(--green)"></div></div>
+              <div class="pipe-content"><div class="pipe-title">AI agent uses the graph</div><div class="pipe-desc">Ask a question — watch the agent trace relationships instead of grepping files</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Demo 2 -->
+        <div class="card" style="border-top:3px solid var(--blue);padding:28px">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+            <div style="width:36px;height:36px;border-radius:8px;background:var(--blue-l);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="3" width="14" height="12" rx="2" stroke="#1A73E8" stroke-width="1.5"/><path d="M6 7l2 2-2 2M10 11h2" stroke="#1A73E8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <div>
+              <div style="font-family:'Google Sans',sans-serif;font-size:15px;font-weight:700;color:var(--ink)">GateMid Proxy</div>
+              <div style="font-size:12px;color:var(--muted)">Non-human layer</div>
+            </div>
+          </div>
+          <div class="pipeline">
+            <div class="pipe-step">
+              <div class="pipe-left"><div class="pipe-dot" style="background:var(--blue)"></div><div class="pipe-line"></div></div>
+              <div class="pipe-content"><div class="pipe-title">Send a prompt via Claude Code</div><div class="pipe-desc">Claude Code routes through GateMid — fully transparent to the developer</div></div>
+            </div>
+            <div class="pipe-step">
+              <div class="pipe-left"><div class="pipe-dot" style="background:var(--blue)"></div><div class="pipe-line"></div></div>
+              <div class="pipe-content"><div class="pipe-title">Watch routing and compression</div><div class="pipe-desc">Proxy logs show classifier tier, token count before vs after Headroom</div></div>
+            </div>
+            <div class="pipe-step">
+              <div class="pipe-left"><div class="pipe-dot" style="background:var(--blue)"></div></div>
+              <div class="pipe-content"><div class="pipe-title">Read the Ragas score</div><div class="pipe-desc"><code>docker exec gatemid python -m eval.score_view</code> — see the live quality log</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Prompt hint bar -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 24px;display:flex;align-items:center;gap:16px">
+        <div style="width:8px;height:8px;border-radius:50%;background:var(--green);flex-shrink:0;animation:pulse 1.5s infinite"></div>
+        <div style="font-family:'Roboto Mono',monospace;font-size:13px;color:var(--ink2)">Presenting live — follow along at <strong>localhost:4000</strong></div>
+        <style>@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}</style>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ╔══════════════════════════════════════════════════════════╗ -->
+<!-- ║  SLIDE 18 — Q&A                                          ║ -->
+<!-- ╚══════════════════════════════════════════════════════════╝ -->
+<div class="slide" data-track="">
+  <div class="topbar">
+    <div class="topbar-left"><div class="topbar-logo"><span style="background:#1A73E8"></span><span style="background:#34A853"></span><span style="background:#F9AB00"></span><span style="background:#EA4335"></span></div><span class="topbar-title">Q &amp; A</span></div>
+    <span class="topbar-counter">18 / 18</span>
+  </div>
+  <div class="slide-body" style="justify-content:center;align-items:center">
+    <div style="width:100%;max-width:780px;text-align:center">
+
+      <div class="eyebrow" style="text-align:center;margin-bottom:16px">Questions</div>
+      <div class="headline" style="font-size:clamp(40px,5.5vw,68px);margin-bottom:16px">Q &amp; A</div>
+      <div style="font-size:18px;color:var(--muted);font-weight:300;margin-bottom:48px;line-height:1.5">We're happy to go deeper on any part of the architecture,<br>the evidence, or the roadmap.</div>
+
+      <!-- Quick-reference recap cards -->
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:40px;text-align:left">
+        <div class="card" style="border-top:3px solid var(--green);padding:18px">
+          <div class="label" style="color:var(--green);margin-bottom:10px">Human Layer</div>
+          <ul class="blist green" style="gap:6px">
+            <li style="font-size:13px">Knowledge graph from any codebase</li>
+            <li style="font-size:13px">VS Code extension — one click</li>
+            <li style="font-size:13px">50% faster comprehension test</li>
+          </ul>
+        </div>
+        <div class="card" style="border-top:3px solid var(--blue);padding:18px">
+          <div class="label" style="color:var(--blue);margin-bottom:10px">Non-Human Layer</div>
+          <ul class="blist" style="gap:6px">
+            <li style="font-size:13px">Smart routing via complexity score</li>
+            <li style="font-size:13px">60–95% token compression</li>
+            <li style="font-size:13px">Guardrails + async Ragas scoring</li>
+          </ul>
+        </div>
+        <div class="card" style="border-top:3px solid var(--amber);padding:18px">
+          <div class="label" style="color:#C26D00;margin-bottom:10px">What's Next</div>
+          <ul class="blist" style="gap:6px">
+            <li style="font-size:13px">Auto-improvement from Ragas logs</li>
+            <li style="font-size:13px">Domain graph enrichment (Java/FHIR)</li>
+            <li style="font-size:13px">PHI masking + org-wide dashboard</li>
+          </ul>
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:0">
+        <div style="flex:1;height:2px;background:linear-gradient(90deg,transparent,var(--green))"></div>
+        <div style="padding:0 24px;font-family:'Google Sans',sans-serif;font-size:14px;font-weight:500;color:var(--muted);white-space:nowrap">Thank you</div>
+        <div style="flex:1;height:2px;background:linear-gradient(90deg,var(--blue),transparent)"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Navigation ─────────────────────────────────────────────── -->
+<nav class="nav">
+  <button class="nav-btn" id="btnPrev" onclick="navigate(-1)">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M10.5 3L5.5 8l5 5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    Previous
+  </button>
+  <div class="nav-dots" id="navDots"></div>
+  <button class="nav-btn primary" id="btnNext" onclick="navigate(1)">
+    Next
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M5.5 3l5 5-5 5" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
+</nav>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  const dotsContainer = document.getElementById('navDots');
+  let current = 0;
+
+  // Build dots
+  slides.forEach((_, i) => {
+    const d = document.createElement('div');
+    d.className = 'nav-dot' + (i === 0 ? ' active' : '');
+    d.onclick = () => goTo(i);
+    dotsContainer.appendChild(d);
+  });
+
+  function goTo(n) {
+    slides[current].classList.remove('active');
+    dotsContainer.children[current].classList.remove('active');
+    current = Math.max(0, Math.min(n, slides.length - 1));
+    slides[current].classList.add('active');
+    dotsContainer.children[current].classList.add('active');
+    document.getElementById('btnPrev').disabled = current === 0;
+    document.getElementById('btnNext').disabled = current === slides.length - 1;
+
+    // Update track chip in topbar
+    const track = slides[current].dataset.track;
+    document.querySelectorAll('.topbar-track').forEach(el => el.remove());
+    if (track) {
+      const topbar = slides[current].querySelector('.topbar-left');
+      const chip = document.createElement('span');
+      chip.className = 'topbar-track';
+      chip.textContent = track;
+      topbar.appendChild(chip);
+    }
+  }
+
+  function navigate(dir) { goTo(current + dir); }
+
+  // Keyboard navigation
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') navigate(1);
+    if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   navigate(-1);
+  });
+
+  // Init state
+  goTo(0);
+</script>
+</body>
+</html>
