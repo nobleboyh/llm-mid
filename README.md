@@ -64,9 +64,10 @@ Gemini / DeepSeek API
 │                                                                      │
 │  1. BLPOP from Redis eval:pending queue                              │
 │  2. Ragas scoring (DeepSeek-as-judge + Gemini embeddings)            │
-│     ├─ Faithfulness          (weight: 0.4)                           │
-│     ├─ Answer Relevancy      (weight: 0.4)                           │
-│     └─ Context Precision     (weight: 0.2)                           │
+│     ├─ Faithfulness *        (weight: 0.4)                           │
+│     ├─ Answer Relevancy      (weight: 0.4 / 1.0 without ctx)         │
+│     └─ Context Precision *   (weight: 0.2)                           │
+│     * only scored when contexts are present — composite rebalances   │
 │  3. Write scored record → Redis (call_id → hash)                     │
 │  4. Update global & category leaderboards (sorted sets)              │
 │                                                                      │
@@ -290,9 +291,10 @@ LLM Response → RagasLogger.log_success_event()
                     ▼
               eval-worker (BLPOP → score → Redis write)
                     │
-                    ├─ Faithfulness      40%  — Is the answer grounded in context?
+                    ├─ Faithfulness *    40%  — Is the answer grounded in context?
                     ├─ Answer Relevancy  40%  — How relevant is the answer to the question?
-                    └─ Context Precision  20%  — Does context contain only relevant info?
+                    ├─ Context Precision * 20%  — Does context contain only relevant info?
+                    └─ * skipped when call has no retrieved contexts; composite reweights to relevancy only
                     │
                     ▼
               Redis scored records + leaderboards
@@ -313,6 +315,37 @@ docker exec gatemid-headroom python -m eval.score_view --prompt-id v2_system_pro
 # JSON output (pipe to a file for analysis)
 docker exec gatemid-headroom python -m eval.score_view --json
 ```
+
+### Interactive score board
+
+For a full-screen, keyboard-navigable view of scored calls, use the interactive TUI:
+
+```bash
+# Start the interactive score board (shows Best calls first)
+docker exec -it gatemid-eval-worker python -m eval.score_view_interactive
+
+# Filter by category
+docker exec -it gatemid-eval-worker python -m eval.score_view_interactive --category fhir_query
+
+# Show more records
+docker exec -it gatemid-eval-worker python -m eval.score_view_interactive --n 50
+```
+
+**Control reference:**
+
+| Key | Action |
+|---|---|
+| `↑` / `↓` | Scroll through records in the current view |
+| `Tab` / `←` / `→` | Switch between **Best** and **Worst** scoring calls |
+| `Enter` / `Space` | Open the full detail view for the selected record |
+| `Esc` / `q` | Close the detail view and return to the score board |
+| `q` | Quit the score board |
+
+The full detail view shows everything without truncation: **call ID, composite score (full precision), request category, model name, prompt version, token counts, timestamp, per-dimension ragas scores (faithfulness\*, relevancy, precision\*), the complete question, and the complete answer.** Close it with `Esc`, `q`, or `Enter` to resume browsing.
+
+\* Faithfulness and context precision are only scored when the call has retrieved contexts. For non-RAG calls (no context), the composite is driven by answer relevancy alone.
+
+> **Note:** Requires `-it` (interactive TTY) for TUI rendering. Uses [Rich](https://github.com/Textualize/rich) for terminal rendering (already installed in the eval-worker container).
 
 The eval-worker uses DeepSeek as the LLM-as-judge (via direct OpenAI-compatible client) and Gemini for embeddings (via lightweight httpx — no PyTorch required).
 
@@ -379,6 +412,7 @@ Three headroom patches are applied at startup in `proxy/entrypoint.py`:
 | **Eval** | `eval/worker_main.py` | Eval-worker entrypoint — configures judge LLM + embeddings |
 | **Eval** | `eval/redis_store.py` | Redis data layer — queue management, scored records, leaderboards |
 | **Eval** | `eval/score_view.py` | CLI for querying best/worst scoring calls |
+| **Eval** | `eval/score_view_interactive.py` | Interactive TUI score board with keyboard navigation |
 | **Eval** | `eval/clear_redis.py` | CLI for clearing eval data from Redis |
 | **Eval** | `eval/gemini_embeddings.py` | Lightweight Gemini embeddings (httpx, no PyTorch) |
 | **Infra** | `docker-compose.yml` | Three services: proxy, redis, eval-worker |
