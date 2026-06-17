@@ -38,8 +38,7 @@ METRIC_WEIGHTS = {
     "context_precision": 0.2,
 }
 METRIC_WEIGHTS_NO_CTX = {
-    "faithfulness": 0.5,
-    "answer_relevancy": 0.5,
+    "answer_relevancy": 1.0,
 }
 
 
@@ -105,9 +104,14 @@ def score_record(record: dict, llm=None, embeddings=None) -> dict:
     if isinstance(answer_relevancy, ResponseRelevancy):
         answer_relevancy.strictness = 1
 
-    # Build the metric list — always include faithfulness + answer_relevancy
-    metrics = [faithfulness, answer_relevancy]
+    # Build the metric list. Faithfulness requires retrieved_contexts to
+    # judge whether the answer's claims can be inferred. When the call has
+    # no contexts, every claim is trivially "unfaithful" against an empty
+    # context, so faithfulness is skipped and the composite rebalances to
+    # answer_relevancy alone (METRIC_WEIGHTS_NO_CTX).
+    metrics = [answer_relevancy]
     if has_context:
+        metrics.insert(0, faithfulness)
         metrics.append(context_precision)
     if has_ground_truth:
         metrics.append(context_recall)
@@ -126,7 +130,8 @@ def score_record(record: dict, llm=None, embeddings=None) -> dict:
     row = result.to_pandas().iloc[0].to_dict()
 
     record["scores"] = {
-        "faithfulness":      _sanitize(round(float(row.get("faithfulness", 0.0)), 4)),
+        "faithfulness":      _sanitize(round(float(row.get("faithfulness", 0.0)), 4))
+                             if has_context else None,
         "answer_relevancy":  _sanitize(round(float(row.get("answer_relevancy", 0.0)), 4)),
         "context_precision": _sanitize(round(float(row.get("context_precision", 0.0)), 4))
                              if has_context else None,
@@ -184,13 +189,13 @@ def eval_worker(once: bool = False, llm=None, embeddings=None):
             write_scored_call(scored)
             pending = queue_length()
             logger.info(
-                "Scored call %s — composite=%.4f (faith=%.4f, relev=%.4f, "
+                "Scored call %s — composite=%.4f (faith=%s, relev=%.4f, "
                 "ctx_prec=%s) — %d remaining in queue",
                 call_id,
                 scored["composite_score"],
-                scored["scores"].get("faithfulness", 0.0),
+                scored["scores"].get("faithfulness", "N/A") or "N/A",
                 scored["scores"].get("answer_relevancy", 0.0),
-                scored["scores"].get("context_precision", "N/A"),
+                scored["scores"].get("context_precision", "N/A") or "N/A",
                 pending,
             )
         except Exception as exc:

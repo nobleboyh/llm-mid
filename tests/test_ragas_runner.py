@@ -21,11 +21,10 @@ class TestComputeComposite:
         assert composite == pytest.approx(0.72)
 
     def test_no_context_rebalance(self):
-        scores = {"faithfulness": 0.8, "answer_relevancy": 0.6, "context_precision": 0.0}
+        scores = {"faithfulness": None, "answer_relevancy": 0.6, "context_precision": None}
         composite = compute_composite(scores, has_context=False)
-        # context_precision is 0 but should be excluded from weight calc
-        # 0.8*0.5 + 0.6*0.5 = 0.40 + 0.30 = 0.70
-        assert composite == pytest.approx(0.70)
+        # faithfulness and context_precision excluded; only answer_relevancy at 1.0
+        assert composite == pytest.approx(0.6)
 
     def test_all_perfect(self):
         scores = {"faithfulness": 1.0, "answer_relevancy": 1.0, "context_precision": 1.0}
@@ -140,9 +139,17 @@ class TestScoreRecord:
         assert result["scores"]["answer_relevancy"] is not None
 
     def test_context_precision_empty(self, mock_evaluate, call_record_no_context):
-        """When contexts is empty, context_precision should be None."""
+        """When contexts is empty, context_precision and faithfulness should be None."""
         result = score_record(call_record_no_context)
         assert result["scores"]["context_precision"] is None
+        assert result["scores"]["faithfulness"] is None
+
+    def test_no_context_faithfulness_none(self, mock_evaluate, call_record_no_context):
+        """When contexts is empty, faithfulness is skipped entirely."""
+        result = score_record(call_record_no_context)
+        assert result["scores"]["faithfulness"] is None
+        # Composite should be driven by answer_relevancy alone
+        assert result["composite_score"] == pytest.approx(0.75)  # 0.75 * 1.0
 
     def test_no_gt_no_recall_scored(self, mock_evaluate, call_record):
         result = score_record(call_record)
