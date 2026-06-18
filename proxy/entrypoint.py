@@ -73,10 +73,31 @@ def _patched_compress(messages, model="claude-sonnet-4-5-20250929",
                                 min_tokens_to_compress=250)
     else:
         config.compress_user_messages = True
-    return _original_compress(
+    result = _original_compress(
         messages=messages, model=model, model_limit=model_limit,
         optimize=optimize, hooks=hooks, config=config, **kwargs,
     )
+
+    # ── Store compression result in Redis (fire-and-forget) ──────────────
+    if result and result.tokens_saved > 0:
+        try:
+            import datetime
+            import uuid
+            from eval.redis_store import store_headroom_result
+            store_headroom_result(
+                call_id=str(uuid.uuid4()),
+                timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                tokens_before=result.tokens_before,
+                tokens_after=result.tokens_after,
+                tokens_saved=result.tokens_saved,
+                compression_ratio=result.compression_ratio,
+                model=model,
+                transforms_applied=result.transforms_applied,
+            )
+        except Exception:
+            pass  # Redis storage is best-effort; never block compression
+
+    return result
 
 
 # headroom/__init__.py re-exports compress as a function, so

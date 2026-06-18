@@ -349,6 +349,46 @@ The full detail view shows everything without truncation: **call ID, composite s
 
 The eval-worker uses DeepSeek as the LLM-as-judge (via direct OpenAI-compatible client) and Gemini for embeddings (via lightweight httpx — no PyTorch required).
 
+---
+
+## Compression Analytics
+
+Every compressed request is logged to Redis with token-before/after/saved counts and per-day aggregates. The interactive viewer shows daily and per-call breakdowns.
+
+### Interactive compression board
+
+```bash
+# Show last 10 days of compression stats
+docker exec -it gatemid-headroom python -m eval.headroom_view_interactive
+
+# Show more days
+docker exec -it gatemid-headroom python -m eval.headroom_view_interactive --days 14
+```
+
+**Control reference:**
+
+| Key | Action |
+|---|---|
+| `↑` / `↓` | Scroll through daily stats |
+| `Enter` / `Space` | Drill into per-call details for the selected day |
+| `Esc` / `q` | Go back from detail view / return to days |
+| `q` | Quit the viewer |
+
+**Top bar** shows running grand totals: total tokens saved, percent reduction, and total compressed calls across all time.
+
+**Daily detail view** shows every compression call for that day: timestamp, model, tokens before/after/saved, compression ratio, and which transforms were applied (SmartCrusher, CodeCompressor, CacheAligner).
+
+> **Note:** Requires `-it` (interactive TTY) for TUI rendering. Uses [Rich](https://github.com/Textualize/rich) for terminal rendering (already installed in both containers).
+
+**Redis data layout (compression):**
+
+| Key | Type | Purpose |
+|-----|------|---------|
+| `headroom:call:{call_id}` | Hash | Individual compression result (30d TTL) |
+| `headroom:day:{YYYY-MM-DD}` | Hash | Daily aggregate (tokens saved, call count) |
+| `headroom:days` | ZSet | Date index for listing latest N days |
+| `headroom:totals` | Hash | Running grand totals |
+
 ### Clear Redis data for a fresh test
 
 ```bash
@@ -413,6 +453,7 @@ Three headroom patches are applied at startup in `proxy/entrypoint.py`:
 | **Eval** | `eval/redis_store.py` | Redis data layer — queue management, scored records, leaderboards |
 | **Eval** | `eval/score_view.py` | CLI for querying best/worst scoring calls |
 | **Eval** | `eval/score_view_interactive.py` | Interactive TUI score board with keyboard navigation |
+| **Eval** | `eval/headroom_view_interactive.py` | Interactive TUI showing daily compression stats (tokens saved, ratio, per-call detail) |
 | **Eval** | `eval/clear_redis.py` | CLI for clearing eval data from Redis |
 | **Eval** | `eval/gemini_embeddings.py` | Lightweight Gemini embeddings (httpx, no PyTorch) |
 | **Infra** | `docker-compose.yml` | Three services: proxy, redis, eval-worker |

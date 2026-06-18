@@ -162,3 +162,151 @@ def _hydrate(call_id: str) -> dict | None:
         if field in raw:
             raw[field] = float(raw[field]) if "." in str(raw[field]) else int(raw[field])
     return raw
+
+
+# ── Headroom compression storage ─────────────────────────────────────────────
+
+HEADROOM_TTL = TTL_SECONDS  # Same 30-day TTL as eval records
+HEADROOM_CALL_PREFIX = "headroom:call:"
+HEADROOM_DAY_PREFIX = "headroom:day:"
+HEADROOM_DAYS_KEY = "headroom:days"
+HEADROOM_TOTALS_KEY = "headroom:totals"
+
+
+def store_headroom_result(
+    call_id: str,
+    timestamp: str,
+    tokens_before: int,
+    tokens_after: int,
+    tokens_saved: int,
+    compression_ratio: float,
+    model: str = "",
+    transforms_applied: list[str] | None = None,
+) -> None:
+    """Persist a single compression result to Redis (fire-and-forget)."""
+    day_str = timestamp[:10]  # YYYY-MM-DD
+
+    # 1. Individual call record
+    r.hset(f"{HEADROOM_CALL_PREFIX}{call_id}", mapping={
+        "call_id": call_id,
+        "timestamp": timestamp,
+        "tokens_before": str(tokens_before),
+        "tokens_after": str(tokens_after),
+        "tokens_saved": str(tokens_saved),
+        "compression_ratio": str(compression_ratio),
+        "model": model,
+        "transforms_json": json.dumps(transforms_applied or []),
+    })
+    r.expire(f"{HEADROOM_CALL_PREFIX}{call_id}", HEADROOM_TTL)
+
+    # 2. Daily aggregate
+    r.hincrbyfloat(f"{HEADROOM_DAY_PREFIX}{day_str}", "total_tokens_before", tokens_before)
+    r.hincrbyfloat(f"{HEADROOM_DAY_PREFIX}{day_str}", "total_tokens_after", tokens_after)
+    r.hincrbyfloat(f"{HEADROOM_DAY_PREFIX}{day_str}", "total_tokens_saved", tokens_saved)
+    r.hincrby(f"{HEADROOM_DAY_PREFIX}{day_str}", "call_count", 1)
+    r.expire(f"{HEADROOM_DAY_PREFIX}{day_str}", HEADROOM_TTL)
+
+    # 3. Days index (for listing latest N days)
+    import time
+    from datetime import datetime, timezone
+    try:
+        day_ts = datetime.strptime(day_str, "%Y-%m-%d").replace(
+            tzinfo=timezone.utc,
+        ).timestamp()
+    except ValueError:
+        day_ts = time.time()
+    r.zadd(HEADROOM_DAYS_KEY, {day_str: day_ts})
+
+    # 4. Running totals
+    r.hincrbyfloat(HEADROOM_TOTALS_KEY, "total_tokens_before", tokens_before)
+    r.hincrbyfloat(HEADROOM_TOTALS_KEY, "total_tokens_after", tokens_after)
+    r.hincrbyfloat(HEADROOM_TOTALS_KEY, "total_tokens_saved", tokens_saved)
+    r.hincrby(HEADROOM_TOTALS_KEY, "total_calls", 1)
+
+
+def get_daily_headroom_stats(n_days: int = 10) -> list[dict]:
+    """Return the latest *n_days* of daily compression aggregates (descending)."""
+    days = r.zrevrange(HEADROOM_DAYS_KEY, 0, n_days - 1)
+    results: list[dict] = []
+    for day_str in days:
+        raw = r.hgetall(f"{HEADROOM_DAY_PREFIX}{day_str}")
+        if not raw:
+            continue
+        tb = float(raw.get("total_tokens_before", 0))
+        ta = float(raw.get("total_tokens_after", 0))
+        ts = float(raw.get("total_tokens_saved", 0))
+        count = int(raw.get("call_count", 0))
+        results.append({
+            "date": day_str,
+            "call_count": count,
+            "tokens_before": int(tb),
+            "tokens_after": int(ta),
+            "tokens_saved": int(ts),
+            "compression_ratio": ts / tb if tb > 0 else 0.0,
+        })
+    return results
+
+
+def get_total_headroom_stats() -> dict:
+    """Return running grand totals for all headroom compression."""
+    raw = r.hgetall(HEADROOM_TOTALS_KEY)
+    if not raw:
+        return {
+            "total_tokens_before": 0,
+            "total_tokens_after": 0,
+            "total_tokens_saved": 0,
+            "total_calls": 0,
+            "compression_ratio": 0.0,
+        }
+    tb = float(raw.get("total_tokens_before", 0))
+    ta = float(raw.get("total_tokens_after", 0))
+    ts = float(raw.get("total_tokens_saved", 0))
+    tc = int(raw.get("total_calls", 0))
+    return {
+        "total_tokens_before": int(tb),
+        "total_tokens_after": int(ta),
+        "total_tokens_saved": int(ts),
+        "total_calls": tc,
+        "compression_ratio": ts / tb if tb > 0 else 0.0,
+    }
+
+
+def get_day_headroom_calls(date_str: str) -> list[dict]:
+    """Return individual headroom calls for a specific date.
+
+    Scans all headroom:call:* keys for matching date prefix in timestamp.
+    For small-to-medium datasets this is fine; for very large datasets
+    consider adding a per-day call-index ZSet.
+    """
+    calls: list[dict] = []
+    cursor = 0
+    prefix = f"{HEADROOM_CALL_PREFIX}*"
+    match_prefix = date_str  # YYYY-MM-DD prefix in ISO timestamp
+    while True:
+        cursor, keys = r.scan(cursor=cursor, match=prefix, count=500)
+        for key in keys:
+            raw = r.hgetall(key)
+            if not raw:
+                continue
+            ts = raw.get("timestamp", "")
+            if not ts.startswith(match_prefix):
+                continue
+            calls.append(_hydrate_headroom(raw))
+        if cursor == 0:
+            break
+    # Sort by timestamp descending (most recent first)
+    calls.sort(key=lambda c: c.get("timestamp", ""), reverse=True)
+    return calls
+
+
+def _hydrate_headroom(raw: dict) -> dict:
+    """Cast headroom hash fields back to native types."""
+    for field in ("tokens_before", "tokens_after", "tokens_saved"):
+        if field in raw:
+            raw[field] = int(float(raw[field]))
+    if "compression_ratio" in raw:
+        raw["compression_ratio"] = float(raw["compression_ratio"])
+    if "transforms_json" in raw:
+        raw["transforms_applied"] = json.loads(raw["transforms_json"])
+        del raw["transforms_json"]
+    return raw
