@@ -115,13 +115,32 @@ Verify it's running:
 curl -s http://localhost:4000/health -H "Authorization: Bearer sk-local-dev-key" | head -c 200
 ```
 
-### 3. Connect your tools (pick your setup below)
+### 3. Quick tool setup (pick one)
+
+**Option A — Automated setup script:**
+
+```bash
+# Interactive — picks the tool for you
+./setup-gatemid.sh
+
+# Or non-interactive with env vars
+GATEMID_URL=http://localhost:4000 GATEMID_API_KEY=sk-local-dev-key ./setup-gatemid.sh
+
+# Revert when done
+./setup-gatemid.sh --uninstall
+```
+
+The script supports **Claude Code** and **OpenCode** — it writes the correct config file for each, creates a timestamped backup of your existing settings, and handles uninstall cleanly.
+
+**Option B — Manual setup** (detailed below):
 
 ---
 
 ## Claude Code Setup
 
 Configure Claude Code to route through GateMid. All prompts get compressed and auto-routed to the best model.
+
+> **Quick alternative:** `./setup-gatemid.sh` does this automatically (see [Quick Start](#3-quick-tool-setup-pick-one)).
 
 ### Step 1: Configure environment
 
@@ -202,6 +221,8 @@ Available models: `gemini-flash`, `deepseek-flash`, `gemini-pro`, `deepseek-pro`
 ## Open Code Setup
 
 Open Code supports OpenAI-compatible backends natively.
+
+> **Quick alternative:** `./setup-gatemid.sh` does this automatically (see [Quick Start](#3-quick-tool-setup-pick-one)).
 
 ### Step 1: Configure environment
 
