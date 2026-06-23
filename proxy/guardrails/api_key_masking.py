@@ -161,6 +161,112 @@ def mask_api_keys_in_json(
     return masked_data, all_events
 
 
+# ── Content-only masking helpers ──────────────────────────────────────────────_
+
+def mask_api_keys_in_request(body: dict) -> tuple[dict, list[dict[str, Any]]]:
+    """Mask API keys only in content-bearing request fields.
+
+    Scans ``system`` and ``messages[*].content`` (both string and
+    Anthropic-style list-of-blocks form).  Everything else — tools,
+    metadata, protocol fields — is left untouched.
+    """
+    all_events: list[dict[str, Any]] = []
+
+    def _walk_text(text: str, path: str) -> str:
+        nonlocal all_events
+        masked, events = mask_api_keys_in_text(text)
+        if events:
+            for e in events:
+                all_events.append({**e, "path": path})
+        return masked
+
+    # ── system (top-level, Anthropic /v1/messages) ────────────────────────
+    if isinstance(body.get("system"), str):
+        body["system"] = _walk_text(body["system"], "$.system")
+
+    # ── messages[].content ────────────────────────────────────────────────
+    messages = body.get("messages", [])
+    if isinstance(messages, list):
+        for i, msg in enumerate(messages):
+            if not isinstance(msg, dict):
+                continue
+            content = msg.get("content")
+            if isinstance(content, str):
+                messages[i]["content"] = _walk_text(
+                    content, f"$.messages[{i}].content"
+                )
+            elif isinstance(content, list):
+                for j, block in enumerate(content):
+                    if isinstance(block, dict) and block.get("type") == "text":
+                        text = block.get("text", "")
+                        if isinstance(text, str):
+                            content[j] = {
+                                **block,
+                                "text": _walk_text(
+                                    text, f"$.messages[{i}].content[{j}].text"
+                                ),
+                            }
+
+    # ── user content at top level (Anthropic /v1/messages) ─────────────────
+    if isinstance(body.get("content"), str):
+        body["content"] = _walk_text(body["content"], "$.content")
+
+    return body, all_events
+
+
+def mask_api_keys_in_response(body: dict) -> tuple[dict, list[dict[str, Any]]]:
+    """Mask API keys only in content-bearing response fields.
+
+    Scans ``choices[*].message.content`` (OpenAI /chat/completions),
+    ``choices[*].delta.content`` (streaming chunks), and
+    ``content[*].text`` (Anthropic /v1/messages).
+    """
+    all_events: list[dict[str, Any]] = []
+
+    def _walk_text(text: str, path: str) -> str:
+        nonlocal all_events
+        masked, events = mask_api_keys_in_text(text)
+        if events:
+            for e in events:
+                all_events.append({**e, "path": path})
+        return masked
+
+    # ── choices[].message.content / choices[].delta.content ───────────────
+    choices = body.get("choices")
+    if isinstance(choices, list):
+        for i, choice in enumerate(choices):
+            if not isinstance(choice, dict):
+                continue
+            msg = choice.get("message")
+            if isinstance(msg, dict):
+                c = msg.get("content")
+                if isinstance(c, str):
+                    choices[i]["message"]["content"] = _walk_text(
+                        c, f"$.choices[{i}].message.content"
+                    )
+            delta = choice.get("delta")
+            if isinstance(delta, dict):
+                c = delta.get("content")
+                if isinstance(c, str):
+                    choices[i]["delta"]["content"] = _walk_text(
+                        c, f"$.choices[{i}].delta.content"
+                    )
+
+    # ── content[].text (Anthropic /v1/messages format) ────────────────────
+    content_blocks = body.get("content")
+    if isinstance(content_blocks, list):
+        for i, block in enumerate(content_blocks):
+            if isinstance(block, dict) and block.get("type") == "text":
+                text = block.get("text", "")
+                if isinstance(text, str):
+                    content_blocks[i] = {
+                        **block,
+                        "text": _walk_text(text, f"$.content[{i}].text"),
+                    }
+
+    return body, all_events
+
+
 # ── ASGI Middleware ────────────────────────────────────────────────────────────
 
 # Paths that contain LLM messages to inspect
@@ -222,10 +328,10 @@ class ApiKeyMaskingMiddleware:
 
         full_body = b"".join(body_chunks)
 
-        # ── Mask API keys in request body ──────────────────────────────────
+        # ── Mask API keys in request body (content fields only) ───────────
         try:
             body_json = json.loads(full_body)
-            masked_body, events = mask_api_keys_in_json(body_json)
+            masked_body, events = mask_api_keys_in_request(body_json)
 
             if events:
                 full_body = json.dumps(masked_body, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
@@ -288,7 +394,7 @@ class ApiKeyMaskingMiddleware:
                         resp_body = b"".join(resp_chunks)
                         try:
                             resp_json = json.loads(resp_body)
-                            masked_resp, resp_events = mask_api_keys_in_json(resp_json)
+                            masked_resp, resp_events = mask_api_keys_in_response(resp_json)
                             if resp_events:
                                 _log_events("response", path, resp_events)
                                 resp_body = json.dumps(masked_resp, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
