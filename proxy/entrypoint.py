@@ -58,7 +58,7 @@ _original_cr_init = _ContentRouter.__init__
 
 def _patched_cr_init(self, config=None, observer=None):
     _original_cr_init(self, config=config, observer=observer)
-    self.config.enable_kompress = False
+    self.config.enable_kompress = True
     self.config.skip_user_messages = False  # SmartCrusher needs to see user payloads
 
 

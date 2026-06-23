@@ -62,12 +62,11 @@ services:
     restart: unless-stopped
     environment:
       REDIS_URL:            redis://redis:6379
-      DEEPSEEK_API_KEY:     ${DEEPSEEK_API_KEY}
+      GATEWAY_MASTER_KEY:   ${GATEWAY_MASTER_KEY:-sk-local-dev-key}
+      LITELLM_URL:          http://litellm:4000
+      # Gemini still needed for Ragas embedding metrics (answer_relevancy, etc.)
       GEMINI_API_KEY:       ${GEMINI_API_KEY}
-      ANTHROPIC_API_KEY:    ${ANTHROPIC_API_KEY:-}
-      OPENAI_API_KEY:       ${OPENAI_API_KEY:-}
       RAGAS_EVAL_ENABLED:   ${RAGAS_EVAL_ENABLED:-true}
-      RAGAS_EVAL_MODEL:     deepseek-chat
     depends_on:
       redis:
         condition: service_healthy

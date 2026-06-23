@@ -190,10 +190,12 @@ select_providers() {
 
     echo "  Choose which LLM providers to enable."
     echo "  Type the number to toggle a provider on/off, then press Enter when done."
+    echo "  ${YELLOW}Note:${RESET} Gemini (Google) is required for Ragas eval scoring —"
+    echo "  if you skip it or leave the API key blank, eval will be disabled."
     echo ""
 
     # Use space-separated string instead of bash array (bash 3.2 compat)
-    toggle_state="on on on on on on"
+    toggle_state="off off off off off off"
 
     # Read existing .env for defaults
     if [[ -f .env ]]; then
@@ -502,27 +504,38 @@ MODEL
 
     # ── Ragas Eval Model (requires Gemini for embeddings) ─────────
     if _gemini_is_configured; then
-        # Use DeepSeek if available, otherwise fall back to first enabled model
-        local eval_model="deepseek-flash"
-        local eval_env="DEEPSEEK_API_KEY"
-        if [[ ! " ${ENABLED_MODELS[*]} " =~ " deepseek-flash " ]]; then
-            eval_model="${ENABLED_MODELS[0]}"
-            eval_env=$(model_env "$eval_model")
+        # Ask user which model to use as the LLM-as-judge
+        if [[ ${#ENABLED_MODELS[@]} -gt 0 ]]; then
+            echo ""
+            echo "  Ragas LLM-as-judge — pick a model for evaluating responses:"
+            _print_model_menu
+            echo ""
+            local judge_model
+            judge_model=$(pick_model_with_default "Judge model" "${ENABLED_MODELS[0]}")
+        else
+            local judge_model="deepseek-flash"
         fi
 
-        local eval_backend
-        eval_backend=$(model_backend "$eval_model")
-        eval_backend="${eval_backend:-deepseek/deepseek-v4-flash}"
+        local judge_backend
+        judge_backend=$(model_backend "$judge_model")
+        judge_backend="${judge_backend:-deepseek/deepseek-v4-flash}"
+
+        local judge_env
+        judge_env=$(model_env "$judge_model")
 
         cat >> litellm_config.yaml <<YAML
-  # Ragas Eval Model
+  # Ragas Eval Model (LLM-as-judge — routes through LiteLLM)
+  # The eval worker calls this with model="ragas-eval". The RagasLogger
+  # callback skips logging for this model prefix, preventing an eval loop.
   - model_name: ragas-eval
     litellm_params:
-      model: ${eval_backend}
-      api_key: "os.environ/${eval_env:-DEEPSEEK_API_KEY}"
-
+      model: ${judge_backend}
 YAML
-        ok "Ragas eval model configured (needs Gemini + DeepSeek keys)"
+        if [[ -n "$judge_env" ]]; then
+            echo "      api_key: \"os.environ/${judge_env}\"" >> litellm_config.yaml
+        fi
+        echo "" >> litellm_config.yaml
+        ok "Ragas eval configured with judge model: ${judge_model}"
     else
         echo "# Ragas eval model skipped — no GEMINI_API_KEY configured" >> litellm_config.yaml
         echo "" >> litellm_config.yaml

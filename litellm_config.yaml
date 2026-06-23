@@ -23,7 +23,13 @@ model_list:
       model: deepseek/deepseek-v4-pro
       api_key: "os.environ/DEEPSEEK_API_KEY"
 
-# Ragas eval model skipped — no GEMINI_API_KEY configured
+  # Ragas Eval Model (LLM-as-judge — routes through LiteLLM)
+  # The eval worker calls this with model="ragas-eval". The RagasLogger
+  # callback skips logging for this model prefix, preventing an eval loop.
+  - model_name: ragas-eval
+    litellm_params:
+      model: deepseek/deepseek-v4-flash
+      api_key: "os.environ/DEEPSEEK_API_KEY"
 
   # Team Smart Router — auto-classifies and routes
   - model_name: team-smart-router

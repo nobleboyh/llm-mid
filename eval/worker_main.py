@@ -1,13 +1,13 @@
 """Entrypoint for the eval-worker Docker container.
 
-Sets up logging, configures the Ragas LLM-as-judge to call DeepSeek Flash
-directly (bypassing LiteLLM), and starts the eval worker loop.
+Sets up logging, configures the Ragas LLM-as-judge through LiteLLM proxy
+(using the ragas-eval model alias), and starts the eval worker loop.
 
 Environment variables:
     REDIS_URL            — Redis connection string (default: redis://redis:6379)
-    DEEPSEEK_API_KEY     — DeepSeek API key for LLM-as-judge
+    GATEWAY_MASTER_KEY   — LiteLLM proxy API key
+    LITELLM_URL          — LiteLLM proxy URL (default: http://litellm:4000)
     RAGAS_EVAL_ENABLED   — Set to "true" to activate eval (requires Gemini key)
-    RAGAS_EVAL_MODEL     — Model for Ragas LLM-as-judge (default: deepseek-chat)
 """
 
 import logging
@@ -46,34 +46,35 @@ for _mod_name, _cls_name in [
         setattr(_mod, _cls_name, type(_cls_name, (), {}))
         sys.modules[_mod_name] = _mod
 
-# ── Configure Ragas LLM-as-judge (direct to DeepSeek) ─────────────────────────
-# Bypass LiteLLM entirely so eval traffic doesn't compete with user requests
-# and avoids needing embedding models in the proxy.
+# ── Configure Ragas LLM-as-judge (through LiteLLM proxy) ──────────────────────
+# The eval worker calls LiteLLM with model="ragas-eval". The RagasLogger
+# callback skips requests with model_name starting with "ragas-eval", so
+# there is no infinite eval loop.
 
-deepseek_key = os.environ["DEEPSEEK_API_KEY"]
-eval_model = os.getenv("RAGAS_EVAL_MODEL", "deepseek-chat")
+litellm_url = os.getenv("LITELLM_URL", "http://litellm:4000").rstrip("/")
+litellm_key = os.getenv("GATEWAY_MASTER_KEY", "sk-local-dev-key")
 
 logger.info(
-    "Ragas LLM-as-judge configured — model=%s, provider=deepseek (direct)",
-    eval_model,
+    "Ragas LLM-as-judge configured — routing through LiteLLM at %s",
+    litellm_url,
 )
 
 
 # ── Start the worker ──────────────────────────────────────────────────────────
 def main():
-    # Create an OpenAI-compatible client pointed directly at DeepSeek
+    # Create an OpenAI-compatible client pointed at LiteLLM proxy
     from openai import OpenAI
     from ragas.llms import llm_factory
 
     client = OpenAI(
-        base_url="https://api.deepseek.com/v1",
-        api_key=deepseek_key,
+        base_url=f"{litellm_url}/v1",
+        api_key=litellm_key,
     )
     ragas_llm = llm_factory(
-        eval_model,
+        "ragas-eval",              # ← uses the ragas-eval model alias in litellm_config.yaml
         client=client,
-        temperature=0.1,     # Lower temp → more deterministic JSON output
-        max_tokens=2048,     # Room for the question-generation prompt response
+        temperature=0.1,
+        max_tokens=2048,
     )
 
     # Create Gemini-based embeddings for metrics that need them
@@ -88,8 +89,7 @@ def main():
     from eval.worker import eval_worker
 
     logger.info(
-        "Starting eval worker (model=%s, embeddings=%s)",
-        eval_model,
+        "Starting eval worker (judge=ragas-eval via LiteLLM, embeddings=%s)",
         "GeminiEmbeddings(gemini-embedding-001)",
     )
     eval_worker(llm=ragas_llm, embeddings=ragas_embeddings)
