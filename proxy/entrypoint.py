@@ -82,6 +82,7 @@ def _patched_compress(messages, model="claude-sonnet-4-5-20250929",
     if result and result.tokens_saved > 0:
         try:
             import datetime
+            import json
             import uuid
             from eval.redis_store import store_headroom_result
             store_headroom_result(
@@ -93,6 +94,8 @@ def _patched_compress(messages, model="claude-sonnet-4-5-20250929",
                 compression_ratio=result.compression_ratio,
                 model=model,
                 transforms_applied=result.transforms_applied,
+                prompt_before=json.dumps(messages, ensure_ascii=False),
+                prompt_after=json.dumps(result.messages, ensure_ascii=False),
             )
         except Exception:
             pass  # Redis storage is best-effort; never block compression

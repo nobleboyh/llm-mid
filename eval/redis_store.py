@@ -182,12 +182,14 @@ def store_headroom_result(
     compression_ratio: float,
     model: str = "",
     transforms_applied: list[str] | None = None,
+    prompt_before: str | None = None,
+    prompt_after: str | None = None,
 ) -> None:
     """Persist a single compression result to Redis (fire-and-forget)."""
     day_str = timestamp[:10]  # YYYY-MM-DD
 
     # 1. Individual call record
-    r.hset(f"{HEADROOM_CALL_PREFIX}{call_id}", mapping={
+    mapping = {
         "call_id": call_id,
         "timestamp": timestamp,
         "tokens_before": str(tokens_before),
@@ -196,7 +198,12 @@ def store_headroom_result(
         "compression_ratio": str(compression_ratio),
         "model": model,
         "transforms_json": json.dumps(transforms_applied or []),
-    })
+    }
+    if prompt_before is not None:
+        mapping["prompt_before"] = prompt_before
+    if prompt_after is not None:
+        mapping["prompt_after"] = prompt_after
+    r.hset(f"{HEADROOM_CALL_PREFIX}{call_id}", mapping=mapping)
     r.expire(f"{HEADROOM_CALL_PREFIX}{call_id}", HEADROOM_TTL)
 
     # 2. Daily aggregate
@@ -309,4 +316,5 @@ def _hydrate_headroom(raw: dict) -> dict:
     if "transforms_json" in raw:
         raw["transforms_applied"] = json.loads(raw["transforms_json"])
         del raw["transforms_json"]
+    # prompt_before and prompt_after are already strings — pass through
     return raw
