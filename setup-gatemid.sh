@@ -3,7 +3,7 @@
 # setup-gatemid.sh — Configure coding agents to use a Gatemid proxy
 #
 # Switches Claude Code / OpenCode to point at a gatemid URL + API key with
-# all models routed through team-smart-router (deepseek-pro as fallback).
+# all models routed through team-smart-router (configurable per-tier defaults).
 #
 # Usage:
 #   ./setup-gatemid.sh               interactive install
@@ -76,12 +76,47 @@ env['ANTHROPIC_API_KEY'] = key
 env['ANTHROPIC_MODEL'] = 'team-smart-router'
 env['ANTHROPIC_DEFAULT_HAIKU_MODEL'] = 'team-smart-router'
 env['ANTHROPIC_DEFAULT_SONNET_MODEL'] = 'team-smart-router'
-env['ANTHROPIC_DEFAULT_OPUS_MODEL'] = 'deepseek-pro'
+env['ANTHROPIC_DEFAULT_OPUS_MODEL'] = 'team-smart-router'
 cfg['env'] = env
 with open(fp, 'w') as f:
     json.dump(cfg, f, indent=2)
     f.write('\n')
 " "$file" "$url" "$key"
+}
+
+json_set_env_with_tiers() {
+    local file="$1" url="$2" key="$3"
+    local haiku="${4:-team-smart-router}"
+    local sonnet="${5:-team-smart-router}"
+    local opus="${6:-team-smart-router}"
+    local reasoning="${7:-team-smart-router}"
+    python3 -c "
+import json, sys
+fp = sys.argv[1]
+url = sys.argv[2]
+key = sys.argv[3]
+haiku = sys.argv[4]
+sonnet = sys.argv[5]
+opus = sys.argv[6]
+reasoning = sys.argv[7]
+try:
+    with open(fp) as f:
+        cfg = json.load(f)
+except (FileNotFoundError, json.JSONDecodeError):
+    cfg = {}
+env = cfg.get('env', {})
+env['ANTHROPIC_BASE_URL'] = url.rstrip('/')
+env['ANTHROPIC_API_KEY'] = key
+env['ANTHROPIC_MODEL'] = 'team-smart-router'
+env['ANTHROPIC_DEFAULT_HAIKU_MODEL'] = haiku
+env['ANTHROPIC_DEFAULT_SONNET_MODEL'] = sonnet
+env['ANTHROPIC_DEFAULT_OPUS_MODEL'] = opus
+env['ANTHROPIC_DEFAULT_REASONING_MODEL'] = reasoning
+cfg['env'] = env
+with open(fp, 'w') as f:
+    json.dump(cfg, f, indent=2)
+    f.write('\n')
+" "$file" "$url" "$key" "$haiku" "$sonnet" "$opus" "$reasoning"
 }
 
 json_remove_gatemid_env() {
@@ -98,7 +133,7 @@ env = cfg.get('env', {})
 gatemid_keys = {
     'ANTHROPIC_BASE_URL', 'ANTHROPIC_API_KEY', 'ANTHROPIC_MODEL',
     'ANTHROPIC_DEFAULT_HAIKU_MODEL', 'ANTHROPIC_DEFAULT_SONNET_MODEL',
-    'ANTHROPIC_DEFAULT_OPUS_MODEL',
+    'ANTHROPIC_DEFAULT_OPUS_MODEL', 'ANTHROPIC_DEFAULT_REASONING_MODEL',
 }
 dirty = False
 for k in list(env.keys()):
@@ -133,13 +168,17 @@ CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 
 install_claude_code() {
     local url="$1" key="$2"
+    local haiku="${3:-team-smart-router}"
+    local sonnet="${4:-team-smart-router}"
+    local opus="${5:-deepseek-pro}"
+    local reasoning="${6:-team-smart-router}"
     mkdir -p "$(dirname "$CLAUDE_SETTINGS")"
 
     if [[ -f "$CLAUDE_SETTINGS" ]]; then
         backup_file "$CLAUDE_SETTINGS"
     fi
 
-    json_set_env "$CLAUDE_SETTINGS" "$url" "$key"
+    json_set_env_with_tiers "$CLAUDE_SETTINGS" "$url" "$key" "$haiku" "$sonnet" "$opus" "$reasoning"
     ok "wrote ${CLAUDE_SETTINGS/$HOME/\~}"
 }
 
@@ -266,7 +305,7 @@ agent_name() {
 
 agent_install() {
     case "$1" in
-        1) install_claude_code "$2" "$3" ;;
+        1) install_claude_code "$2" "$3" "${TIER_HAIKU:-team-smart-router}" "${TIER_SONNET:-team-smart-router}" "${TIER_OPUS:-team-smart-router}" "${TIER_REASONING:-team-smart-router}" ;;
         2) install_opencode "$2" "$3" ;;
     esac
 }
@@ -330,6 +369,137 @@ get_url_and_key() {
     GATEMID_API_KEY="$key"
 }
 
+pick_tier_models() {
+    echo ""
+    echo "  Model tiers let Claude Code select the best model for each"
+    echo "  request complexity level. Defaults route everything through"
+    echo "  'team-smart-router' (auto-classifies), but you can pin a tier"
+    echo "  to a specific model alias (e.g. gemini-pro, deepseek-flash)."
+    echo ""
+
+    if ! confirm "Customize per-tier models?"; then
+        TIER_HAIKU="team-smart-router"
+        TIER_SONNET="team-smart-router"
+        TIER_OPUS="team-smart-router"
+        TIER_REASONING="team-smart-router"
+        info "Using default tier model mapping (all team-smart-router)"
+        return
+    fi
+
+    # Dynamically list model aliases from litellm_config.yaml
+    local detected_models=()
+    if [[ -f litellm_config.yaml ]]; then
+        while IFS= read -r line; do
+            if [[ "$line" =~ ^[[:space:]]*-[[:space:]]*model_name:[[:space:]]*(.+) ]]; then
+                local name="${BASH_REMATCH[1]}"
+                if [[ "$name" != "ragas-eval" && "$name" != "team-smart-router" ]]; then
+                    detected_models+=("$name")
+                fi
+            fi
+        done < litellm_config.yaml
+    fi
+
+    # Fallback list if parsing failed or file doesn't exist
+    if [[ ${#detected_models[@]} -eq 0 ]]; then
+        detected_models=(
+            "gemini-flash" "gemini-pro"
+            "deepseek-flash" "deepseek-pro"
+            "claude-sonnet" "claude-fable" "claude-opus"
+            "openai-gpt4o" "openai-o3"
+            "copilot-gpt4" "copilot-codex"
+            "github-llama"
+        )
+    fi
+
+    echo ""
+    echo "  Available models:"
+    _print_model_menu_with "${detected_models[@]}"
+    echo ""
+    echo "  Type the number or the model name."
+    echo ""
+
+    TIER_HAIKU=$(_pick_gatemid_model "SIMPLE (Haiku) tier" "team-smart-router" "${detected_models[@]}")
+    TIER_SONNET=$(_pick_gatemid_model "MEDIUM (Sonnet) tier" "team-smart-router" "${detected_models[@]}")
+    TIER_OPUS=$(_pick_gatemid_model "COMPLEX (Opus) tier" "team-smart-router" "${detected_models[@]}")
+    TIER_REASONING=$(_pick_gatemid_model "REASONING tier" "team-smart-router" "${detected_models[@]}")
+
+    echo ""
+    echo "  Your tier mapping:"
+    echo "    SIMPLE    (Haiku)   → ${TIER_HAIKU}"
+    echo "    MEDIUM    (Sonnet)  → ${TIER_SONNET}"
+    echo "    COMPLEX   (Opus)    → ${TIER_OPUS}"
+    echo "    REASONING           → ${TIER_REASONING}"
+}
+
+# ── Numbered model picker helpers (bash 3.2 compatible) ──────────────────────
+
+_print_model_menu_with() {
+    local models=("$@") i=0 m
+    for m in "${models[@]}"; do
+        i=$((i + 1))
+        echo "    ${i}) $m"
+    done
+}
+
+_model_num_to_name_with() {
+    local num="$1" models=("$@") i=0 m
+    for m in "${models[@]}"; do
+        i=$((i + 1))
+        [[ "$i" -eq "$num" ]] && echo "$m" && return 0
+    done
+    return 1
+}
+
+_model_is_valid_with() {
+    local candidate="$1" m
+    shift
+    for m in "$@"; do
+        [[ "$m" == "$candidate" ]] && return 0
+    done
+    return 1
+}
+
+_find_default_num_with() {
+    local target="$1" models=("$@") i=0 m
+    i=0
+    for m in "${models[@]}"; do
+        i=$((i + 1))
+        [[ "$m" == "$target" ]] && echo "$i" && return 0
+    done
+    echo "1"
+}
+
+_pick_gatemid_model() {
+    local prompt="$1" default="$2" rest=("${@:3}")
+    local models=("${rest[@]}")
+    local val resolved default_num
+    default_num=$(_find_default_num_with "$default" "${models[@]}")
+    while true; do
+        read -rp "  ${prompt} [${default_num}] ${default}: " val
+        val="${val:-$default_num}"
+
+        # Try as number first
+        if [[ "$val" =~ ^[0-9]+$ ]]; then
+            resolved=$(_model_num_to_name_with "$val" "${models[@]}")
+            if [[ -n "$resolved" ]]; then
+                echo "$resolved"
+                return
+            fi
+        fi
+
+        # Try as model name
+        if _model_is_valid_with "$val" "${models[@]}"; then
+            echo "$val"
+            return
+        fi
+
+        # Invalid — show help
+        echo -e "  ${YELLOW}⚠${RESET} '${val}' is not a valid choice. Pick a number (or name) from:"
+        _print_model_menu_with "${models[@]}"
+        echo ""
+    done
+}
+
 mask_key() {
     local k="$1"
     local len=${#k}
@@ -359,8 +529,9 @@ Usage:  ./setup-gatemid.sh [OPTIONS]
 
 Configure a coding agent to point at a Gatemid proxy.
 
-All models are routed through "team-smart-router"; the Opus / heavy
-fallback model is "deepseek-pro".
+All models are routed through "team-smart-router" by default.
+During install you can customise per-tier models (SIMPLE/MEDIUM/COMPLEX/REASONING)
+to pin a specific model alias instead of using the auto-router.
 
 Options:
   -u, --uninstall    Remove gatemid proxy configuration
@@ -392,9 +563,10 @@ main() {
     done
 
     echo ""
-    echo -e "${BOLD}╔══════════════════════════════════════════╗${RESET}"
-    echo -e "${BOLD}║   Gatemid Proxy Setup for Coding Agents  ║${RESET}"
-    echo -e "${BOLD}╚══════════════════════════════════════════╝${RESET}"
+    echo -e "${BOLD}╔═══════════════════════════════════════════════════╗${RESET}"
+    echo -e "${BOLD}║     GateMid Proxy Setup — Coding Agents           ║${RESET}"
+    echo -e "${BOLD}║     Auto: team-smart-router  |  Custom tiers: ✔   ║${RESET}"
+    echo -e "${BOLD}╚═══════════════════════════════════════════════════╝${RESET}"
 
     if $uninstall; then
         header "Uninstalling gatemid proxy"
@@ -419,14 +591,19 @@ main() {
     fi
 
     get_url_and_key
+    pick_tier_models
 
     local name
     name=$(agent_name "$AGENT_KEY")
     echo ""
     echo "Configuring ${name} …"
-    echo "  URL       = ${GATEMID_URL}"
-    echo "  Key       = $(mask_key "$GATEMID_API_KEY")"
-    echo "  Models    → team-smart-router (fallback: deepseek-pro)"
+    echo "  URL              = ${GATEMID_URL}"
+    echo "  Key              = $(mask_key "$GATEMID_API_KEY")"
+    echo "  Auto model       = team-smart-router"
+    echo "  SIMPLE (Haiku)   → ${TIER_HAIKU:-team-smart-router}"
+    echo "  MEDIUM (Sonnet)  → ${TIER_SONNET:-team-smart-router}"
+    echo "  COMPLEX (Opus)   → ${TIER_OPUS:-team-smart-router}"
+    echo "  REASONING        → ${TIER_REASONING:-team-smart-router}"
     echo ""
 
     if ! confirm "Proceed?"; then
@@ -438,6 +615,14 @@ main() {
 
     echo ""
     ok "${name} is now configured for gatemid proxy."
+    echo "   Auto model: team-smart-router (classifies & routes by complexity)"
+    if [[ "${TIER_HAIKU:-}" != "team-smart-router" || "${TIER_SONNET:-}" != "team-smart-router" || "${TIER_OPUS:-}" != "team-smart-router" || "${TIER_REASONING:-}" != "team-smart-router" ]]; then
+        echo "   Custom tier models:"
+        echo "     SIMPLE    → ${TIER_HAIKU:-team-smart-router}"
+        echo "     MEDIUM    → ${TIER_SONNET:-team-smart-router}"
+        echo "     COMPLEX   → ${TIER_OPUS:-team-smart-router}"
+        echo "     REASONING → ${TIER_REASONING:-team-smart-router}"
+    fi
     echo "   Start a new session (or reload your shell) for changes to take effect."
 }
 

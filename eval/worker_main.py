@@ -6,6 +6,7 @@ directly (bypassing LiteLLM), and starts the eval worker loop.
 Environment variables:
     REDIS_URL            — Redis connection string (default: redis://redis:6379)
     DEEPSEEK_API_KEY     — DeepSeek API key for LLM-as-judge
+    RAGAS_EVAL_ENABLED   — Set to "true" to activate eval (requires Gemini key)
     RAGAS_EVAL_MODEL     — Model for Ragas LLM-as-judge (default: deepseek-chat)
 """
 
@@ -22,6 +23,14 @@ logging.basicConfig(
     stream=sys.stdout,
 )
 logger = logging.getLogger("eval.worker_main")
+
+# ── Graceful skip when Gemini key is missing ──────────────────────────────────
+if os.environ.get("RAGAS_EVAL_ENABLED", "").lower() != "true":
+    logger.info(
+        "RAGAS_EVAL_ENABLED is not 'true' — eval worker is disabled. "
+        "Set GEMINI_API_KEY and run quick-setup.sh to enable."
+    )
+    sys.exit(0)
 
 # ── Ragas VertexAI compat shim ────────────────────────────────────────────────
 # Ragas 0.4.3 unconditionally imports ChatVertexAI / VertexAI from

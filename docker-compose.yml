@@ -15,7 +15,9 @@ services:
       # Provider keys
       GEMINI_API_KEY:       ${GEMINI_API_KEY}
       DEEPSEEK_API_KEY:     ${DEEPSEEK_API_KEY}
+      ANTHROPIC_API_KEY:    ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY:       ${OPENAI_API_KEY:-}
+      GITHUB_API_KEY:       ${GITHUB_API_KEY:-}
       # Gateway
       GATEWAY_MASTER_KEY:   ${GATEWAY_MASTER_KEY:-sk-local-dev-key}
       # Hugging Face token (speeds up model downloads)
@@ -62,6 +64,9 @@ services:
       REDIS_URL:            redis://redis:6379
       DEEPSEEK_API_KEY:     ${DEEPSEEK_API_KEY}
       GEMINI_API_KEY:       ${GEMINI_API_KEY}
+      ANTHROPIC_API_KEY:    ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY:       ${OPENAI_API_KEY:-}
+      RAGAS_EVAL_ENABLED:   ${RAGAS_EVAL_ENABLED:-true}
       RAGAS_EVAL_MODEL:     deepseek-chat
     depends_on:
       redis:

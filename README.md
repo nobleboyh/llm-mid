@@ -39,10 +39,10 @@ Local-dev AI gateway combining [Headroom](https://github.com/chopratejas/headroo
 │  │              LiteLLM Proxy Engine                             │    │
 │  │                                                               │    │
 │  │  ComplexityRouter (team-smart-router)                         │    │
-│  │   ├─ SIMPLE    → deepseek-flash   (greetings, yes/no, etc.)  │    │
-│  │   ├─ MEDIUM    → deepseek-flash   (general queries)           │    │
-│  │   ├─ COMPLEX   → deepseek-pro     (code, architecture)        │    │
-│  │   └─ REASONING → deepseek-pro     (step-by-step, debugging)  │    │
+│  │   ├─ SIMPLE    → model-of-choice  (greetings, yes/no)         │    │
+│  │   ├─ MEDIUM    → model-of-choice  (general queries)           │    │
+│  │   ├─ COMPLEX   → model-of-choice  (code, architecture)        │    │
+│  │   └─ REASONING → model-of-choice  (step-by-step, debugging)  │    │
 │  │                                                               │    │
 │  │  Provider translation (Anthropic ↔ OpenAI/Gemini/DeepSeek)    │    │
 │  └──────────────────────────────────────────────────────────────┘    │
@@ -214,7 +214,7 @@ export ANTHROPIC_MODEL="deepseek-pro"
 claude
 ```
 
-Available models: `gemini-flash`, `deepseek-flash`, `gemini-pro`, `deepseek-pro`, `team-smart-router`
+Available models (configurable via `./quick-setup.sh`): `gemini-flash`, `deepseek-flash`, `gemini-pro`, `deepseek-pro`, `claude-sonnet`, `claude-fable`, `claude-opus`, `openai-gpt4o`, `openai-o3`, `copilot-gpt4`, `copilot-codex`, `github-llama`, `team-smart-router`
 
 ---
 
@@ -288,10 +288,10 @@ The **complexity router** (`team-smart-router`) is a local, rule-based classifie
 
 | Tier | Score Range | Model | Use Case |
 |------|-------------|-------|----------|
-| SIMPLE | 0.00 – 0.20 | deepseek-flash | Greetings, definitions, yes/no |
-| MEDIUM | 0.20 – 0.45 | deepseek-flash | General queries (default fallback) |
-| COMPLEX | 0.45 – 0.65 | deepseek-pro | Code, architecture, technical |
-| REASONING | 0.65+ | deepseek-pro | Step-by-step, analysis, debugging |
+| SIMPLE | 0.00 – 0.20 | deepseek-flash (default) | Greetings, definitions, yes/no |
+| MEDIUM | 0.20 – 0.45 | deepseek-flash (default) | General queries (default fallback) |
+| COMPLEX | 0.45 – 0.65 | deepseek-pro (default) | Code, architecture, technical |
+| REASONING | 0.65+ | deepseek-pro (default) | Step-by-step, analysis, debugging |
 
 Token thresholds are tuned for Claude Code's ~500+ token system prompt: `simple` at 100 tokens, `complex` at 2000 tokens.
 
@@ -527,7 +527,7 @@ docker compose logs litellm
 ```
 
 Common issues:
-- **Missing API keys**: Ensure `.env` has valid `GEMINI_API_KEY` and `DEEPSEEK_API_KEY`
+- **Missing API keys**: Ensure `.env` has valid `GEMINI_API_KEY`, `DEEPSEEK_API_KEY`, etc. Run `./quick-setup.sh` to configure.
 - **Port conflict**: Port 4000 already in use? Change `docker-compose.yml` ports mapping
 - **Docker build fails**: Ensure Docker Desktop is running and you have internet access for pip
 
