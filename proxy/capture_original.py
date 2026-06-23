@@ -140,6 +140,9 @@ class CaptureOriginalQuestionMiddleware:
                     "body": full_body,
                     "more_body": False,
                 }
-            return {"type": "http.disconnect"}
+            # Forward to real receive so LiteLLM can detect actual client
+            # disconnects during streaming, rather than a fake disconnect
+            # that would abort the response before it completes.
+            return await receive()
 
         await self.app(scope, modified_receive, send)

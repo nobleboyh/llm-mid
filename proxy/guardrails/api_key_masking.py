@@ -352,7 +352,10 @@ class ApiKeyMaskingMiddleware:
                     "body": full_body,
                     "more_body": False,
                 }
-            return {"type": "http.disconnect"}
+            # ponytail: forward to real receive so LiteLLM detects
+            # actual client disconnects during streaming, instead of
+            # getting a fake disconnect that aborts the response early.
+            return await receive()
 
         # ── Buffer and optionally mask response body ────────────────────────
         # For non-streaming responses we buffer all chunks, mask, then forward.

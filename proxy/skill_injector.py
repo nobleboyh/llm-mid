@@ -171,14 +171,20 @@ class SkillInjectorMiddleware:
                     "body": full_body,
                     "more_body": False,
                 }
-            return {"type": "http.disconnect"}
+            # ponytail: forward to real receive so LiteLLM detects
+            # actual client disconnects during streaming, instead of
+            # getting a fake disconnect that aborts the response early.
+            return await receive()
 
         # Wrap send to intercept response and add header
         header_sent = False
 
         async def skill_send(message: MutableMapping[str, Any]) -> None:
             nonlocal header_sent
-            logger.info(
+            is_body = message.get("type") == "http.response.body"
+            is_intermediate_chunk = is_body and message.get("more_body", False)
+            log_level = logger.debug if is_intermediate_chunk else logger.info
+            log_level(
                 "[SKILL_SEND] path=%s msg_type=%s more_body=%s skill_name=%s header_sent=%s",
                 path,
                 message.get("type"),
