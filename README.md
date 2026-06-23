@@ -5,6 +5,7 @@ Local-dev AI gateway combining [Headroom](https://github.com/chopratejas/headroo
 **What it does:**
 - Compresses prompts before they reach the LLM (60-95% token savings)
 - Automatically routes queries to the right model by complexity
+- Activates skill directives via `$trigger` tokens (e.g., `$ponytail` for YAGNI/minimalism) — injected into the system prompt before compression
 - Asynchronously scores every response for quality (faithfulness, relevancy, precision)
 - Drop-in proxy — works with Claude Code, Open Code, and any OpenAI-compatible SDK
 
@@ -464,9 +465,11 @@ Detects `$<skill-name>` trigger tokens (e.g. `$ponytail`) in user messages, stri
 5. Sets response header `X-GateMid-Skill-Applied: <skill-name>`
 6. Records `skill_name` and `skill_tokens_pre_compression` in Redis
 
-**Current skill:**
+**Supported skills:**
 
-| Trigger | Skill | Source |
+Skills are auto-discovered from every `.md` file in `proxy/skills/` at startup.
+
+| Trigger | Skill | Effect |
 |---|---|---|
 | `$ponytail` | [Ponytail](https://github.com/DietrichGebert/ponytail) — The Minimalism Ladder | 7-rung YAGNI ladder: question existence → reuse → stdlib → native → one-liner → minimum. Cuts LOC by ~54%, cost by ~20%, response time by ~27%. |
 
@@ -476,7 +479,20 @@ Detects `$<skill-name>` trigger tokens (e.g. `$ponytail`) in user messages, stri
 Refactor this service $ponytail
 ```
 
-The trigger is stripped before the LLM sees it — only the skill system prompt remains.
+The trigger is stripped before the LLM sees it — only the skill system prompt remains. The activated skill name is returned in the response header `X-GateMid-Skill-Applied`.
+
+**Adding your own skills:**
+
+Drop a new `.md` file into `proxy/skills/` and it's live — no code changes, no config reload needed.
+
+1. Create `proxy/skills/<name>.md` with your skill prompt (markdown, any length)
+2. Restart the proxy (or call `load_skills()` if running in-process)
+3. Use `$<name>` in any message to activate it
+
+| Trigger format | `$<skill-name>` where `skill-name` matches the filename stem (case-insensitive). |
+|-|-|
+
+The skill content is injected into the system prompt **before** Headroom compression so it gets compressed with the rest of the payload (~150-250 tokens after compression for a typical ~500-token skill).
 
 **Edge cases:**
 
@@ -484,7 +500,7 @@ The trigger is stripped before the LLM sees it — only the skill system prompt 
 |---|---|
 | Unknown trigger (`$unknownskill`) | Payload passes through unchanged, no error |
 | Multiple triggers in one message | First recognised trigger wins; rest left as-is |
-| Multipart (list) message content | Skipped — only string content is scanned |
+| Multipart (list) message content (Anthropic `/v1/messages`) | Scanned block-by-block; text blocks are checked for triggers |
 | Missing/empty skill file | Skipped at load time with WARNING log |
 | Non-JSON request body | Middleware no-ops, passes through |
 
@@ -558,7 +574,7 @@ Test coverage:
 | `litellm_config.yaml` | Model routing, complexity router, provider config, callbacks |
 | `proxy/skill_injector.py` | `$trigger` detection, skill injection, response header |
 | `proxy/skills/registry.py` | Skill file loader — scans `proxy/skills/*.md` at startup |
-| `proxy/skills/ponytail.md` | Ponytail minimalism ladder skill (from upstream) |
+| `proxy/skills/` — `ponytail.md` (+ your skills) | Skill markdown files — add a new `.md` to add a new skill |
 | `proxy/entrypoint.py` | ASGI middleware registration, Headroom patches, logger config |
 | `docker-compose.yml` | Three-service Docker deployment |
 | `.env` | Provider API keys (never commit) |
