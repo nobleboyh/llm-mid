@@ -33,6 +33,7 @@ for name in (
     "headroom.integrations.asgi",
     "proxy.guardrails",
     "guardrails",
+    "proxy.skill_injector",
     "proxy.callback",
     "eval.redis_store",
 ):
@@ -58,7 +59,7 @@ _original_cr_init = _ContentRouter.__init__
 
 def _patched_cr_init(self, config=None, observer=None):
     _original_cr_init(self, config=config, observer=observer)
-    self.config.enable_kompress = True
+    self.config.enable_kompress = False
     self.config.skip_user_messages = False  # SmartCrusher needs to see user payloads
 
 
@@ -84,9 +85,13 @@ def _patched_compress(messages, model="claude-sonnet-4-5-20250929",
             import datetime
             import json
             import uuid
-            from eval.redis_store import store_headroom_result
+            from eval.redis_store import (
+                HEADROOM_CALL_PREFIX,
+                store_headroom_result,
+            )
+            call_id = str(uuid.uuid4())
             store_headroom_result(
-                call_id=str(uuid.uuid4()),
+                call_id=call_id,
                 timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 tokens_before=result.tokens_before,
                 tokens_after=result.tokens_after,
@@ -97,6 +102,21 @@ def _patched_compress(messages, model="claude-sonnet-4-5-20250929",
                 prompt_before=json.dumps(messages, ensure_ascii=False),
                 prompt_after=json.dumps(result.messages, ensure_ascii=False),
             )
+
+            # ── Enrich Redis hash with skill analytics (if a skill was injected) ──
+            from proxy.skill_injector import skill_info_var
+            skill_info = skill_info_var.get()
+            if skill_info:
+                from eval.redis_store import r as redis_client
+                redis_client.hset(
+                    f"{HEADROOM_CALL_PREFIX}{call_id}",
+                    mapping={
+                        "skill_name": skill_info["skill_name"],
+                        "skill_tokens_pre_compression": str(
+                            skill_info["skill_tokens_pre_compression"],
+                        ),
+                    },
+                )
         except Exception:
             pass  # Redis storage is best-effort; never block compression
 
@@ -139,14 +159,25 @@ _llm_logging.verbose_proxy_logger.setLevel(logging.WARNING)
 
 logger.info("LiteLLM verbose loggers reconfigured for stdout")
 
+# ── Load skill files into registry ──────────────────────────────────────
+# Skills are .md files in proxy/skills/ that can be activated by $trigger
+# tokens in user messages. Must be loaded before middleware registration
+# so SkillInjectorMiddleware has access to them.
+from proxy.skills.registry import load_skills as _load_skills
+_load_skills()
+
 # Middleware registration order (last registered = outermost, runs first):
 #
-#   Inbound:  ApiKeyMasking → CaptureOriginal → Compression → LiteLLM
-#   Outbound: LiteLLM → Compression → CaptureOriginal → ApiKeyMasking
+#   Inbound:
+#     ApiKeyMasking → CaptureOriginal → SkillInjector → Compression → LiteLLM
+#   Outbound:
+#     LiteLLM → Compression → SkillInjector → CaptureOriginal → ApiKeyMasking
 #
 # ApiKeyMasking is outermost so API keys are sanitized before any other
 # middleware reads or logs the body. CaptureOriginal runs second so it
 # captures the raw question before Headroom compresses messages.
+# SkillInjector runs third so trigger detection and skill injection happen
+# before compression — the skill text is compressed with the rest of the payload.
 
 # 1a. Register Headroom compression middleware (innermost — runs last inbound)
 from headroom.integrations.asgi import CompressionMiddleware
@@ -160,7 +191,15 @@ app.add_middleware(
 logger.info("Headroom CompressionMiddleware registered on LiteLLM proxy "
             "(compress_user_messages=True, local mode)")
 
-# 1b. Register Original Question capture middleware (middle — runs second inbound)
+# 1b. Register Skill Injector middleware (second-innermost — runs third inbound)
+from proxy.skill_injector import SkillInjectorMiddleware
+
+app.add_middleware(SkillInjectorMiddleware)
+
+logger.info("SkillInjectorMiddleware registered — detecting $trigger tokens "
+            "and injecting skills before compression")
+
+# 1c. Register Original Question capture middleware (second — runs second inbound)
 from proxy.capture_original import CaptureOriginalQuestionMiddleware
 
 app.add_middleware(CaptureOriginalQuestionMiddleware)
@@ -168,7 +207,7 @@ app.add_middleware(CaptureOriginalQuestionMiddleware)
 logger.info("CaptureOriginalQuestionMiddleware registered — capturing raw "
             "question before compression")
 
-# 1c. Register API Key masking guardrail (outermost — runs first inbound)
+# 1d. Register API Key masking guardrail (outermost — runs first inbound)
 from guardrails.api_key_masking import ApiKeyMaskingMiddleware
 
 app.add_middleware(ApiKeyMaskingMiddleware)

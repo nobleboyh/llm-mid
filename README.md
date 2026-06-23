@@ -28,7 +28,11 @@ Local-dev AI gateway combining [Headroom](https://github.com/chopratejas/headroo
 │  │  2. CaptureOriginalQuestionMiddleware                         │    │
 │  │     └─ Snapshots pre-compression user question into metadata  │    │
 │  │                                                               │    │
-│  │  3. Headroom CompressionMiddleware  (innermost — runs last)   │    │
+│  │  3. SkillInjectorMiddleware                                   │    │
+│  │     ├─ Detects `$trigger` tokens (e.g. `$ponytail`)           │    │
+│  │     └─ Injects skill content into system prompt pre-compress  │    │
+│  │                                                               │    │
+│  │  4. Headroom CompressionMiddleware  (innermost — runs last)   │    │
 │  │     ├─ SmartCrusher  (JSON compression)                       │    │
 │  │     ├─ CodeCompressor (AST-based)                             │    │
 │  │     └─ CacheAligner  (KV cache prefix alignment)              │    │
@@ -178,7 +182,8 @@ claude (CLI)
 GateMid (LiteLLM Proxy)
   │  1. ApiKeyMasking sanitizes request body
   │  2. CaptureOriginal snapshots the raw question
-  │  3. Headroom ASGI middleware compresses context
+  │  3. SkillInjector detects `$trigger` and injects skill
+  │  4. Headroom ASGI middleware compresses context
   │  4. ComplexityRouter classifies prompt → picks model
   │  5. LiteLLM translates Anthropic → Gemini/Deepseek format
   │  6. Routes to resolved model
@@ -431,7 +436,7 @@ flush_eval()  # returns count of deleted keys
 
 ## Custom Middleware Stack
 
-Three custom ASGI middlewares are registered on the LiteLLM FastAPI app. Registration order is critical — FastAPI/Starlette applies middleware in reverse (last registered = outermost).
+Four custom ASGI middlewares are registered on the LiteLLM FastAPI app. Registration order is critical — FastAPI/Starlette applies middleware in reverse (last registered = outermost).
 
 ### 1. ApiKeyMaskingMiddleware (outermost)
 
@@ -439,13 +444,51 @@ Three custom ASGI middlewares are registered on the LiteLLM FastAPI app. Registr
 
 Sanitizes API keys from request/response bodies before any other middleware or logging sees them. Uses 8 ordered regex patterns covering Gemini (`AIzaSy`), Hugging Face (`hf_`), GitHub tokens, AWS access keys, OpenAI/Anthropic (`sk-`), Bearer tokens, and generic 36+ char strings. Preserves key type prefixes while masking the sensitive portion.
 
-### 2. CaptureOriginalQuestionMiddleware (middle)
+### 2. CaptureOriginalQuestionMiddleware
 
 **File:** `proxy/capture_original.py`
 
 Buffers the full request body before Headroom compression transforms it. Scans messages in reverse for the last user message and injects `metadata.original_question` into the LiteLLM request body. This ensures the eval system scores the real user question, not the compressed version.
 
-### 3. Headroom CompressionMiddleware (innermost)
+### 3. SkillInjectorMiddleware
+
+**File:** `proxy/skill_injector.py`  ·  **Registry:** `proxy/skills/registry.py`  ·  **Skills:** `proxy/skills/*.md`
+
+Detects `$<skill-name>` trigger tokens (e.g. `$ponytail`) in user messages, strips the token from the forwarded message, and injects the corresponding skill markdown into the system prompt. Injection happens **before** Headroom compression so the skill text is compressed with the rest of the payload, minimising net token overhead (~150–250 tokens after compression for a typical ~500-token skill).
+
+**How it works:**
+1. Scans user messages for a `$`-prefixed trigger (e.g. `$ponytail`)
+2. Looks up the trigger in the skill registry (loaded from `proxy/skills/*.md` at startup)
+3. Strips the `$trigger` token from the user message
+4. Prepends (or appends after an existing) the skill content to the system prompt
+5. Sets response header `X-GateMid-Skill-Applied: <skill-name>`
+6. Records `skill_name` and `skill_tokens_pre_compression` in Redis
+
+**Current skill:**
+
+| Trigger | Skill | Source |
+|---|---|---|
+| `$ponytail` | [Ponytail](https://github.com/DietrichGebert/ponytail) — The Minimalism Ladder | 7-rung YAGNI ladder: question existence → reuse → stdlib → native → one-liner → minimum. Cuts LOC by ~54%, cost by ~20%, response time by ~27%. |
+
+**Usage:** Include `$ponytail` anywhere in your message:
+
+```markdown
+Refactor this service $ponytail
+```
+
+The trigger is stripped before the LLM sees it — only the skill system prompt remains.
+
+**Edge cases:**
+
+| Scenario | Behaviour |
+|---|---|
+| Unknown trigger (`$unknownskill`) | Payload passes through unchanged, no error |
+| Multiple triggers in one message | First recognised trigger wins; rest left as-is |
+| Multipart (list) message content | Skipped — only string content is scanned |
+| Missing/empty skill file | Skipped at load time with WARNING log |
+| Non-JSON request body | Middleware no-ops, passes through |
+
+### 4. Headroom CompressionMiddleware (innermost)
 
 **File:** `headroom.integrations.asgi` (third-party, locally patched)
 
@@ -467,6 +510,8 @@ Three headroom patches are applied at startup in `proxy/entrypoint.py`:
 | **Config** | `litellm_config.yaml` | Model definitions, complexity router config, callback registration |
 | **Middleware** | `proxy/guardrails/api_key_masking.py` | API key sanitization (8 regex patterns) |
 | **Middleware** | `proxy/capture_original.py` | Pre-compression question snapshot |
+| **Middleware** | `proxy/skill_injector.py` | `$trigger` detection and skill injection into system prompt |
+| **Skill Registry** | `proxy/skills/` | Skill markdown files loaded at startup (`ponytail.md` + future skills) |
 | **Middleware** | `proxy/startup.py` | (Legacy) replaced by `entrypoint.py` |
 | **Callback** | `proxy/callback.py` | `RagasLogger` — captures LLM responses and enqueues for scoring |
 | **Eval** | `eval/worker.py` | Ragas scoring logic — `score_record()`, `compute_composite()`, `eval_worker()` loop |
@@ -499,6 +544,7 @@ Test coverage:
 | `tests/test_routing.py` | Complexity router classifies prompts into correct tiers |
 | `tests/test_compression.py` | Headroom compression produces valid responses |
 | `tests/test_guardrails.py` | API key masking regex patterns (unit + integration) |
+| `tests/test_skill_injector.py` | Skill registry + trigger detection + system prompt injection |
 | `tests/test_callback.py` | RagasLogger skip logic and enqueue behavior |
 | `tests/test_ragas_runner.py` | `score_record()` and `compute_composite()` logic |
 | `tests/test_redis_store.py` | Redis queue and leaderboard operations |
@@ -510,6 +556,9 @@ Test coverage:
 | File | Purpose |
 |------|---------|
 | `litellm_config.yaml` | Model routing, complexity router, provider config, callbacks |
+| `proxy/skill_injector.py` | `$trigger` detection, skill injection, response header |
+| `proxy/skills/registry.py` | Skill file loader — scans `proxy/skills/*.md` at startup |
+| `proxy/skills/ponytail.md` | Ponytail minimalism ladder skill (from upstream) |
 | `proxy/entrypoint.py` | ASGI middleware registration, Headroom patches, logger config |
 | `docker-compose.yml` | Three-service Docker deployment |
 | `.env` | Provider API keys (never commit) |

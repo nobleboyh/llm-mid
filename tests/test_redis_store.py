@@ -150,7 +150,7 @@ class TestReadHelpers:
 
     def test_get_best_calls(self):
         mock_r = MagicMock()
-        mock_r.zrange.return_value = ["best-001"]
+        mock_r.zrevrange.return_value = ["best-001"]
         mock_r.exists.return_value = True
         mock_r.hgetall.return_value = {
             "call_id": "best-001",
@@ -169,8 +169,8 @@ class TestReadHelpers:
             results = get_best_calls(n=1)
 
         assert len(results) == 1
-        # best uses rev=True
-        assert mock_r.zrange.call_args[1]["rev"] is True
+        # best uses zrevrange (descending)
+        assert len(mock_r.zrevrange.call_args_list) == 1
 
     def test_get_worst_filters_missing(self):
         """Calls whose hash has expired should be filtered out."""
@@ -183,7 +183,7 @@ class TestReadHelpers:
 
     def test_hydrate_parses_scores_json(self):
         mock_r = MagicMock()
-        mock_r.zrange.return_value = ["test-001"]
+        mock_r.zrevrange.return_value = ["test-001"]
         mock_r.exists.return_value = True
         mock_r.hgetall.return_value = {
             "call_id": "test-001",
@@ -213,11 +213,11 @@ class TestReadHelpers:
 
     def test_prompt_id_filter(self):
         mock_r = MagicMock()
-        mock_r.zrange.return_value = []
+        mock_r.zrevrange.return_value = []
         with patch("eval.redis_store.r", mock_r):
             get_best_calls(n=10, prompt_id="v2_prompt")
         # Should use the prompt-specific key (priority over category)
-        assert "eval:scores:prompt:v2_prompt" in mock_r.zrange.call_args[0]
+        assert "eval:scores:prompt:v2_prompt" in mock_r.zrevrange.call_args[0]
 
     def test_prompt_id_overrides_category(self):
         """When both prompt_id and category are set, prompt_id wins."""

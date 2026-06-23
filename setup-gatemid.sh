@@ -442,7 +442,9 @@ _print_model_menu_with() {
 }
 
 _model_num_to_name_with() {
-    local num="$1" models=("$@") i=0 m
+    local num="$1"
+    shift
+    local models=("$@") i=0 m
     for m in "${models[@]}"; do
         i=$((i + 1))
         [[ "$i" -eq "$num" ]] && echo "$m" && return 0
@@ -460,7 +462,9 @@ _model_is_valid_with() {
 }
 
 _find_default_num_with() {
-    local target="$1" models=("$@") i=0 m
+    local target="$1"
+    shift
+    local models=("$@") i=0 m
     i=0
     for m in "${models[@]}"; do
         i=$((i + 1))
@@ -476,7 +480,10 @@ _pick_gatemid_model() {
     default_num=$(_find_default_num_with "$default" "${models[@]}")
     while true; do
         read -rp "  ${prompt} [${default_num}] ${default}: " val
-        val="${val:-$default_num}"
+        if [[ -z "$val" ]]; then
+            echo "$default"
+            return
+        fi
 
         # Try as number first
         if [[ "$val" =~ ^[0-9]+$ ]]; then

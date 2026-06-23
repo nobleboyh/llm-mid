@@ -13,7 +13,7 @@ import os
 import pytest
 import requests
 
-from guardrails.api_key_masking import (
+from proxy.guardrails.api_key_masking import (
     mask_api_keys_in_json,
     mask_api_keys_in_text,
 )
