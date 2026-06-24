@@ -67,7 +67,7 @@ def write_scored_call(record: dict) -> None:
 
     # 1. Full record as hash
     key = f"eval:call:{call_id}"
-    r.hset(key, mapping={
+    mapping = {
         "call_id":          call_id,
         "timestamp":        record["timestamp"],
         "question":         record["question"][:2000],
@@ -79,7 +79,15 @@ def write_scored_call(record: dict) -> None:
         "tokens_out":       str(record.get("tokens_out", 0)),
         "request_category": category,
         "prompt_id":        prompt_id,
-    })
+    }
+    # Propagate skill injection info when present (set in callback.py)
+    skill_name = record.get("skill_name")
+    if skill_name:
+        mapping["skill_name"] = skill_name
+        mapping["skill_tokens_pre_compression"] = str(
+            record.get("skill_tokens_pre_compression", 0),
+        )
+    r.hset(key, mapping=mapping)
     r.expire(key, TTL_SECONDS)
 
     # 2. Sorted sets for fast ranking queries
@@ -161,6 +169,9 @@ def _hydrate(call_id: str) -> dict | None:
     for field in ("composite_score", "tokens_in", "tokens_out"):
         if field in raw:
             raw[field] = float(raw[field]) if "." in str(raw[field]) else int(raw[field])
+    # Pass through skill injection fields (set in callback.py)
+    if "skill_tokens_pre_compression" in raw:
+        raw["skill_tokens_pre_compression"] = int(float(raw["skill_tokens_pre_compression"]))
     return raw
 
 

@@ -62,12 +62,17 @@ def _format_row(i: int, active: bool, c: dict) -> Text:
     else:
         s.append("  ")
     s.append(f"{score:>6.3f}  ", style=f"bold yellow {style}")
-    s.append(f"{cat:<16}", style=style)
-    s.append(f"{model:<20}" if len(model) <= 20 else f"{model[:19]}…", style=style)
+    s.append(f"{cat:<14}", style=style)
+    s.append(f"{model:<18}" if len(model) <= 18 else f"{model[:17]}…", style=style)
     s.append(
-        f"{q[:60]}" if len(q) <= 60 else f"{q[:59]}…",
+        f"{q[:40]}" if len(q) <= 40 else f"{q[:39]}…",
         style=style,
     )
+
+    # Skill injection indicator
+    sk = c.get("skill_name", "")
+    if sk:
+        s.append(f"  {sk:<14}", style=f"bold magenta {style}")
     return s
 
 
@@ -102,6 +107,17 @@ def _detail_view(record: dict, header: str) -> Panel:
     lines.append(
         Text.assemble(("Timestamp: ", "bold"), r.get("timestamp", "-"))
     )
+    # ── Skill injection info (when present) ──────────────────────────
+    skill_name = r.get("skill_name", "")
+    if skill_name:
+        lines.append(Text(""))
+        lines.append(Text("Skill Injection:", style="bold underline"))
+        lines.append(
+            Text.assemble(
+                ("  Skill:   ", "dim"),
+                (skill_name, "bold magenta"),
+            )
+        )
     lines.append(Text(""))
     lines.append(Text("Per-dimension scores:", style="bold underline"))
     if scores_raw:
@@ -254,9 +270,10 @@ def _render_board(
     # Column header
     h = Text()
     h.append("  Score  ", style="bold underline")
-    h.append("Category        ", style="bold underline")
-    h.append("Model             ", style="bold underline")
-    h.append("Question", style="bold underline")
+    h.append("Category      ", style="bold underline")
+    h.append("Model              ", style="bold underline")
+    h.append("Question          ", style="bold underline")
+    h.append("Skill           ", style="bold underline")
     lines.append(h)
 
     for i, c in enumerate(records):

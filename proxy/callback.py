@@ -150,6 +150,19 @@ class RagasLogger(CustomLogger):
             "tokens_out":       usage.get("completion_tokens", 0),
         }
 
+        # Attach skill injection info (if any) so it propagates through to the
+        # scored eval record for monitoring in score_view et al.
+        try:
+            from proxy.skill_injector import skill_info_var
+            skill_info = skill_info_var.get()
+            if skill_info:
+                record["skill_name"] = skill_info.get("skill_name", "")
+                record["skill_tokens_pre_compression"] = skill_info.get(
+                    "skill_tokens_pre_compression", 0,
+                )
+        except Exception:
+            pass  # Best-effort — never block the callback
+
         # Push to Redis list — non-blocking, best-effort.
         # If Redis is down, the record is silently dropped.
         try:

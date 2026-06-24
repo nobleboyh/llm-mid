@@ -116,6 +116,15 @@ def _format_call_row(i: int, active: bool, c: dict) -> Text:
     if transforms:
         tx = ", ".join(transforms)
         s.append(f"  {tx[:40]}" if len(tx) <= 40 else f"  {tx[:39]}…", style=f"dim {style}")
+    else:
+        s.append(f"  {'':40}", style="dim")
+
+    # Skill injection indicator
+    sk = c.get("skill_name", "")
+    if sk:
+        s.append(f"  {sk:<16}", style=f"bold magenta {style}")
+    else:
+        s.append(f"  {'':16}", style="dim")
     return s
 
 
@@ -167,6 +176,26 @@ def _call_detail_panel(c: dict, header: str) -> Panel:
             style="dim",
         )
     )
+    # ── Skill injection info ────────────────────────────────────────────
+    skill_name = c.get("skill_name", "")
+    if skill_name:
+        lines.append(Text(""))
+        lines.append(Text("Skill Injection:", style="bold underline"))
+        lines.append(
+            Text.assemble(
+                ("  Skill:   ", "dim"),
+                (skill_name, "bold magenta"),
+            )
+        )
+        st = c.get("skill_tokens_pre_compression", 0)
+        if st:
+            st = int(float(str(st))) if st else 0
+            lines.append(
+                Text.assemble(
+                    ("  Tokens (pre-compression): ", "dim"),
+                    (_fmt_num(st), "yellow"),
+                )
+            )
     lines.append(Text(""))
     lines.append(Text("  Esc / q → back", style="dim"))
 
@@ -555,6 +584,7 @@ def _show_day_detail(date_str: str, console: Console) -> bool:
         col_hdr.append("      Saved  ", style="bold underline")
         col_hdr.append("  %      ", style="bold underline")
         col_hdr.append("Transforms", style="bold underline")
+        col_hdr.append("  Skill          ", style="bold underline")
         lines.append(col_hdr)
 
         if total == 0:
