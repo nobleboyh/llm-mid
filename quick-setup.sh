@@ -566,9 +566,9 @@ YAML
           multiStepPatterns: 0.05
           questionComplexity: 0.05
         tier_boundaries:
-          simple_medium: 0.20
-          medium_complex: 0.45
-          complex_reasoning: 0.65
+          simple_medium: 0.15
+          medium_complex: 0.35
+          complex_reasoning: 0.55
       complexity_router_default_model: ${TIER_SIMPLE}
 
 litellm_settings:
