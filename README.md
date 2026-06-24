@@ -331,16 +331,13 @@ LLM Response → RagasLogger.log_success_event()
 
 ```bash
 # Top 20 best and worst calls across all categories
-docker exec gatemid-headroom python -m eval.score_view
+docker exec gatemid-headroom python -m eval.cli score
 
 # Top 10 worst FHIR query calls
-docker exec gatemid-headroom python -m eval.score_view --category fhir_query --n 10
+docker exec gatemid-headroom python -m eval.cli score --category fhir_query --n 10
 
 # Filter by prompt version
-docker exec gatemid-headroom python -m eval.score_view --prompt-id v2_system_prompt
-
-# JSON output (pipe to a file for analysis)
-docker exec gatemid-headroom python -m eval.score_view --json
+docker exec gatemid-headroom python -m eval.cli score --prompt-id v2_system_prompt
 ```
 
 ### Interactive score board
@@ -349,13 +346,13 @@ For a full-screen, keyboard-navigable view of scored calls, use the interactive 
 
 ```bash
 # Start the interactive score board (shows Best calls first)
-docker exec -it gatemid-eval-worker python -m eval.score_view_interactive
+docker exec -it gatemid-headroom python -m eval.cli score
 
 # Filter by category
-docker exec -it gatemid-eval-worker python -m eval.score_view_interactive --category fhir_query
+docker exec -it gatemid-headroom python -m eval.cli score --category fhir_query
 
 # Show more records
-docker exec -it gatemid-eval-worker python -m eval.score_view_interactive --n 50
+docker exec -it gatemid-headroom python -m eval.cli score --n 50
 ```
 
 **Control reference:**
@@ -386,10 +383,10 @@ Every compressed request is logged to Redis with token-before/after/saved counts
 
 ```bash
 # Show last 10 days of compression stats
-docker exec -it gatemid-headroom python -m eval.headroom_view_interactive
+docker exec -it gatemid-headroom python -m eval.cli headroom
 
 # Show more days
-docker exec -it gatemid-headroom python -m eval.headroom_view_interactive --days 14
+docker exec -it gatemid-headroom python -m eval.cli headroom --days 14
 ```
 
 **Control reference:**
@@ -420,10 +417,10 @@ docker exec -it gatemid-headroom python -m eval.headroom_view_interactive --days
 
 ```bash
 # Remove all eval:* keys (surgical — queues, scores, metadata)
-docker exec gatemid-headroom python eval/clear_redis.py
+docker exec gatemid-headroom python -m eval.cli clear-redis
 
 # Nuclear option — wipes ALL keys in the Redis DB
-docker exec gatemid-headroom python eval/clear_redis.py --hard
+docker exec gatemid-headroom python -m eval.cli clear-redis --hard
 ```
 
 Programmatic use:
@@ -541,9 +538,10 @@ Three headroom patches are applied at startup in `proxy/entrypoint.py`:
 | **Eval** | `eval/worker_main.py` | Eval-worker entrypoint — configures judge LLM + embeddings |
 | **Eval** | `eval/redis_store.py` | Redis data layer — queue management, scored records, leaderboards |
 | **Eval** | `eval/score_view.py` | CLI for querying best/worst scoring calls |
-| **Eval** | `eval/score_view_interactive.py` | Interactive TUI score board with keyboard navigation |
-| **Eval** | `eval/headroom_view_interactive.py` | Interactive TUI showing daily compression stats (tokens saved, ratio, per-call detail) |
-| **Eval** | `eval/clear_redis.py` | CLI for clearing eval data from Redis |
+| **Eval** | `eval/cli.py` | Centralized CLI — `python -m eval.cli {score|headroom|clear-redis}` |
+| **Eval** | `eval/score_view_interactive.py` | Interactive TUI score board (invoked via `eval.cli score`) |
+| **Eval** | `eval/headroom_view_interactive.py` | Interactive TUI headroom stats (invoked via `eval.cli headroom`) |
+| **Eval** | `eval/clear_redis.py` | CLI for clearing eval data (invoked via `eval.cli clear-redis`) |
 | **Eval** | `eval/gemini_embeddings.py` | Lightweight Gemini embeddings (httpx, no PyTorch) |
 | **Infra** | `docker-compose.yml` | Three services: proxy, redis, eval-worker |
 | **Infra** | `proxy/Dockerfile` | Proxy container build |
