@@ -4,11 +4,31 @@ Uses mocking for the Ragas evaluate() call — we test the composite scoring
 logic, edge cases for missing contexts / ground_truth, and metric selection.
 """
 
-from unittest.mock import patch
+import sys
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from eval.worker import compute_composite, score_record
+
+# Pre-register mock ragas modules so the @patch("ragas.evaluate") class
+# decorator doesn't trigger a real ragas import.  The real ragas package has
+# a transitive import (langchain_community.chat_models.vertexai) that fails
+# on CI when that package isn't installed at a compatible version.
+# ponytail: global sys.modules mock; if worker.py stops using lazy ragas
+# imports, switch to an explicit module-level mock fixture instead.
+_ragas_evaluate_mock = MagicMock()
+_ragas_mock = MagicMock()
+_ragas_mock.evaluate = _ragas_evaluate_mock
+sys.modules["ragas"] = _ragas_mock
+sys.modules["ragas.metrics"] = MagicMock()
+
+# ResponseRelevancy must be a real class, not a MagicMock instance —
+# score_record() does isinstance(answer_relevancy, ResponseRelevancy),
+# and isinstance second arg must be a type.
+_mock_answer_relevance = MagicMock()
+_mock_answer_relevance.ResponseRelevancy = type("ResponseRelevancy", (), {})
+sys.modules["ragas.metrics._answer_relevance"] = _mock_answer_relevance
 
 
 # ── compute_composite ─────────────────────────────────────────────────────────
