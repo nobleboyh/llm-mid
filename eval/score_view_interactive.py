@@ -72,7 +72,7 @@ def _format_row(i: int, active: bool, c: dict) -> Text:
     # Skill injection indicator
     sk = c.get("skill_name", "")
     if sk:
-        s.append(f"  {sk:<14}", style=f"bold magenta {style}")
+        s.append(f"  {sk:<20}", style=f"bold magenta {style}")
     return s
 
 
@@ -114,7 +114,7 @@ def _detail_view(record: dict, header: str) -> Panel:
         lines.append(Text("Skill Injection:", style="bold underline"))
         lines.append(
             Text.assemble(
-                ("  Skill:   ", "dim"),
+                ("  Skill(s):   ", "dim"),
                 (skill_name, "bold magenta"),
             )
         )
@@ -273,7 +273,7 @@ def _render_board(
     h.append("Category      ", style="bold underline")
     h.append("Model              ", style="bold underline")
     h.append("Question          ", style="bold underline")
-    h.append("Skill           ", style="bold underline")
+    h.append("Skill               ", style="bold underline")
     lines.append(h)
 
     for i, c in enumerate(records):

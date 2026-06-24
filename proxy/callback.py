@@ -152,11 +152,13 @@ class RagasLogger(CustomLogger):
 
         # Attach skill injection info (if any) so it propagates through to the
         # scored eval record for monitoring in score_view et al.
+        # Supports multiple skill names (comma-separated for storage).
         try:
             from proxy.skill_injector import skill_info_var
             skill_info = skill_info_var.get()
             if skill_info:
-                record["skill_name"] = skill_info.get("skill_name", "")
+                skill_names = skill_info.get("skill_names", [])
+                record["skill_name"] = ", ".join(skill_names) if skill_names else ""
                 record["skill_tokens_pre_compression"] = skill_info.get(
                     "skill_tokens_pre_compression", 0,
                 )

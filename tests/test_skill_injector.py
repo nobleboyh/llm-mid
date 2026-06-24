@@ -98,9 +98,9 @@ class TestSkillInjector:
         }
         with patch("proxy.skill_injector.get_skill") as mock_get:
             mock_get.return_value = _SAMPLE_SKILL
-            name, mutated = SkillInjectorMiddleware._detect_and_inject(payload)
+            names, mutated = SkillInjectorMiddleware._detect_and_inject(payload)
 
-        assert name == "ponytail"
+        assert names == ["ponytail"]
         # User message is now at index 1 (system was prepended at 0)
         user_msg = mutated["messages"][1]
         assert user_msg["role"] == "user"
@@ -116,9 +116,9 @@ class TestSkillInjector:
         }
         with patch("proxy.skill_injector.get_skill") as mock_get:
             mock_get.return_value = _SAMPLE_SKILL
-            name, mutated = SkillInjectorMiddleware._detect_and_inject(payload)
+            names, mutated = SkillInjectorMiddleware._detect_and_inject(payload)
 
-        assert name == "ponytail"
+        assert names == ["ponytail"]
         messages = mutated["messages"]
         assert messages[0]["role"] == "system"
         assert _SAMPLE_SKILL in messages[0]["content"]
@@ -134,9 +134,9 @@ class TestSkillInjector:
         }
         with patch("proxy.skill_injector.get_skill") as mock_get:
             mock_get.return_value = _SAMPLE_SKILL
-            name, mutated = SkillInjectorMiddleware._detect_and_inject(payload)
+            names, mutated = SkillInjectorMiddleware._detect_and_inject(payload)
 
-        assert name == "ponytail"
+        assert names == ["ponytail"]
         system_content = mutated["messages"][0]["content"]
         assert system_content.startswith("You are helpful.")
         assert _SAMPLE_SKILL in system_content
@@ -150,9 +150,9 @@ class TestSkillInjector:
         }
         with patch("proxy.skill_injector.get_skill") as mock_get:
             mock_get.return_value = None
-            name, mutated = SkillInjectorMiddleware._detect_and_inject(payload)
+            names, mutated = SkillInjectorMiddleware._detect_and_inject(payload)
 
-        assert name is None
+        assert names is None
         assert mutated == payload
 
     def test_list_content_handled(self) -> None:
@@ -166,9 +166,9 @@ class TestSkillInjector:
         }
         with patch("proxy.skill_injector.get_skill") as mock_get:
             mock_get.return_value = _SAMPLE_SKILL
-            name, mutated = SkillInjectorMiddleware._detect_and_inject(payload)
+            names, mutated = SkillInjectorMiddleware._detect_and_inject(payload)
 
-        assert name == "ponytail"
+        assert names == ["ponytail"]
         # System message was created (list block processing works)
         assert mutated["messages"][0]["role"] == "system"
         # Trigger stripped from the text block
@@ -176,8 +176,8 @@ class TestSkillInjector:
         assert "$ponytail" not in user_block["text"]
         assert "Hello" in user_block["text"]
 
-    def test_first_only(self) -> None:
-        """Only the first recognised trigger is processed."""
+    def test_all_triggers_processed(self) -> None:
+        """ALL recognised triggers are processed (multi-skill injection)."""
         payload = {
             "messages": [
                 {"role": "user", "content": "$ponytail do this $other too"},
@@ -189,13 +189,19 @@ class TestSkillInjector:
             return all_skills.get(name)
 
         with patch("proxy.skill_injector.get_skill", mock_get):
-            name, mutated = SkillInjectorMiddleware._detect_and_inject(payload)
+            names, mutated = SkillInjectorMiddleware._detect_and_inject(payload)
 
-        assert name == "ponytail"
+        assert names == ["other", "ponytail"]  # alphabetical
         # User message is at index 1 (system was prepended at 0)
         user_msg = mutated["messages"][1]
         assert user_msg["role"] == "user"
-        assert "$other" in user_msg["content"]
+        # BOTH triggers stripped
+        assert "$ponytail" not in user_msg["content"]
+        assert "$other" not in user_msg["content"]
+        # System prompt contains BOTH skill contents
+        system_content = mutated["messages"][0]["content"]
+        assert _SAMPLE_SKILL in system_content
+        assert "Other skill" in system_content
 
     def test_header_format(self, skills_dir) -> None:
         """Verify skill name is returned from detection."""
@@ -214,9 +220,9 @@ class TestSkillInjector:
         }
         with patch("proxy.skill_injector.get_skill") as mock_get:
             mock_get.return_value = skill_content
-            name, mutated = SkillInjectorMiddleware._detect_and_inject(payload)
+            names, mutated = SkillInjectorMiddleware._detect_and_inject(payload)
 
-        assert name == _SAMPLE_SKILL_NAME
+        assert names == [_SAMPLE_SKILL_NAME]
 
     def test_dupe_guard_true(self) -> None:
         """Idempotency guard: True when skill sig is in system message."""

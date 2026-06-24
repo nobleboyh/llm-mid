@@ -5,7 +5,7 @@ Local-dev AI gateway combining [Headroom](https://github.com/chopratejas/headroo
 **What it does:**
 - Compresses prompts before they reach the LLM (60-95% token savings)
 - Automatically routes queries to the right model by complexity
-- Activates skill directives via `$trigger` tokens (e.g., `$ponytail` for YAGNI/minimalism) — injected into the system prompt before compression
+- Activates skill directives via `$trigger` tokens (e.g., `$ponytail` for minimalism, `$caveman` for ultra-concise output) — single or multiple skills injected into the system prompt before compression
 - Asynchronously scores every response for quality (faithfulness, relevancy, precision)
 - Drop-in proxy — works with Claude Code, Open Code, and any OpenAI-compatible SDK
 
@@ -30,8 +30,8 @@ Local-dev AI gateway combining [Headroom](https://github.com/chopratejas/headroo
 │  │     └─ Snapshots pre-compression user question into metadata  │    │
 │  │                                                               │    │
 │  │  3. SkillInjectorMiddleware                                   │    │
-│  │     ├─ Detects `$trigger` tokens (e.g. `$ponytail`)           │    │
-│  │     └─ Injects skill content into system prompt pre-compress  │    │
+│  │     ├─ Detects `$trigger` tokens (e.g. `$ponytail`, `$caveman`)│
+│  │     └─ Injects skill content(s) into system prompt pre-compress│
 │  │                                                               │    │
 │  │  4. Headroom CompressionMiddleware  (innermost — runs last)   │    │
 │  │     ├─ SmartCrusher  (JSON compression)                       │    │
@@ -455,15 +455,15 @@ Buffers the full request body before Headroom compression transforms it. Scans m
 
 **File:** `proxy/skill_injector.py`  ·  **Registry:** `proxy/skills/registry.py`  ·  **Skills:** `proxy/skills/*.md`
 
-Detects `$<skill-name>` trigger tokens (e.g. `$ponytail`) in user messages, strips the token from the forwarded message, and injects the corresponding skill markdown into the system prompt. Injection happens **before** Headroom compression so the skill text is compressed with the rest of the payload, minimising net token overhead (~150–250 tokens after compression for a typical ~500-token skill).
+Detects `$<skill-name>` trigger tokens (e.g. `$ponytail`, `$caveman`) in user messages, strips the tokens from the forwarded message, and injects the corresponding skill markdown into the system prompt. **Supports multiple triggers** in a single message (e.g. `$caveman $ponytail summarise this`) — all matched skills are injected, alphabetically ordered, with each dedup-checked individually. Injection happens **before** Headroom compression so the skill text is compressed with the rest of the payload, minimising net token overhead (~150–250 tokens after compression for a typical ~500-token skill).
 
 **How it works:**
-1. Scans user messages for a `$`-prefixed trigger (e.g. `$ponytail`)
-2. Looks up the trigger in the skill registry (loaded from `proxy/skills/*.md` at startup)
-3. Strips the `$trigger` token from the user message
-4. Prepends (or appends after an existing) the skill content to the system prompt
-5. Sets response header `X-GateMid-Skill-Applied: <skill-name>`
-6. Records `skill_name` and `skill_tokens_pre_compression` in Redis
+1. Scans user messages for ALL `$`-prefixed triggers (e.g. `$ponytail`, `$caveman`)
+2. Looks up each trigger in the skill registry (loaded from `proxy/skills/*.md` at startup)
+3. Strips ALL `$trigger` tokens from the user message
+4. Appends all matched skill contents to the system prompt (alphabetically ordered, no duplicates)
+5. Sets response header `X-GateMid-Skill-Applied: <skill-names>` (comma-separated for multiple)
+6. Records `skill_name` (comma-separated if multiple) and `skill_tokens_pre_compression` in Redis
 
 **Supported skills:**
 
@@ -472,14 +472,21 @@ Skills are auto-discovered from every `.md` file in `proxy/skills/` at startup.
 | Trigger | Skill | Effect |
 |---|---|---|
 | `$ponytail` | [Ponytail](https://github.com/DietrichGebert/ponytail) — The Minimalism Ladder | 7-rung YAGNI ladder: question existence → reuse → stdlib → native → one-liner → minimum. Cuts LOC by ~54%, cost by ~20%, response time by ~27%. |
+| `$caveman` | [Caveman](https://github.com/juliusbrussee/caveman) — ultra-compressed output | Cuts output tokens ~65-75% while preserving technical accuracy. Drops filler, uses fragments. Supports levels: lite / full (default) / ultra / wenyan. |
 
-**Usage:** Include `$ponytail` anywhere in your message:
+**Usage:** Include one or more skill triggers anywhere in your message:
 
 ```markdown
 Refactor this service $ponytail
 ```
 
-The trigger is stripped before the LLM sees it — only the skill system prompt remains. The activated skill name is returned in the response header `X-GateMid-Skill-Applied`.
+Or combine multiple skills in a single message (both are injected into the system prompt):
+
+```markdown
+Write this module $caveman $ponytail
+```
+
+Triggers are stripped before the LLM sees them — only the skill system prompts remain. Activated skill names are returned in the `X-GateMid-Skill-Applied` response header (comma-separated for multiple).
 
 **Adding your own skills:**
 
@@ -499,7 +506,7 @@ The skill content is injected into the system prompt **before** Headroom compres
 | Scenario | Behaviour |
 |---|---|
 | Unknown trigger (`$unknownskill`) | Payload passes through unchanged, no error |
-| Multiple triggers in one message | First recognised trigger wins; rest left as-is |
+| Multiple triggers in one message | All valid triggers are matched, stripped, and injected (alphabetical, no duplicates) |
 | Multipart (list) message content (Anthropic `/v1/messages`) | Scanned block-by-block; text blocks are checked for triggers |
 | Missing/empty skill file | Skipped at load time with WARNING log |
 | Non-JSON request body | Middleware no-ops, passes through |
@@ -527,7 +534,7 @@ Three headroom patches are applied at startup in `proxy/entrypoint.py`:
 | **Middleware** | `proxy/guardrails/api_key_masking.py` | API key sanitization (8 regex patterns) |
 | **Middleware** | `proxy/capture_original.py` | Pre-compression question snapshot |
 | **Middleware** | `proxy/skill_injector.py` | `$trigger` detection and skill injection into system prompt |
-| **Skill Registry** | `proxy/skills/` | Skill markdown files loaded at startup (`ponytail.md` + future skills) |
+| **Skill Registry** | `proxy/skills/` | Skill markdown files loaded at startup (`ponytail.md`, `caveman.md` + future skills) |
 | **Middleware** | `proxy/startup.py` | (Legacy) replaced by `entrypoint.py` |
 | **Callback** | `proxy/callback.py` | `RagasLogger` — captures LLM responses and enqueues for scoring |
 | **Eval** | `eval/worker.py` | Ragas scoring logic — `score_record()`, `compute_composite()`, `eval_worker()` loop |
@@ -574,7 +581,7 @@ Test coverage:
 | `litellm_config.yaml` | Model routing, complexity router, provider config, callbacks |
 | `proxy/skill_injector.py` | `$trigger` detection, skill injection, response header |
 | `proxy/skills/registry.py` | Skill file loader — scans `proxy/skills/*.md` at startup |
-| `proxy/skills/` — `ponytail.md` (+ your skills) | Skill markdown files — add a new `.md` to add a new skill |
+| `proxy/skills/` — `ponytail.md`, `caveman.md` (+ your skills) | Skill markdown files — add a new `.md` to add a new skill |
 | `proxy/entrypoint.py` | ASGI middleware registration, Headroom patches, logger config |
 | `docker-compose.yml` | Three-service Docker deployment |
 | `.env` | Provider API keys (never commit) |

@@ -122,9 +122,9 @@ def _format_call_row(i: int, active: bool, c: dict) -> Text:
     # Skill injection indicator
     sk = c.get("skill_name", "")
     if sk:
-        s.append(f"  {sk:<16}", style=f"bold magenta {style}")
+        s.append(f"  {sk:<24}", style=f"bold magenta {style}")
     else:
-        s.append(f"  {'':16}", style="dim")
+        s.append(f"  {'':24}", style="dim")
     return s
 
 
@@ -183,7 +183,7 @@ def _call_detail_panel(c: dict, header: str) -> Panel:
         lines.append(Text("Skill Injection:", style="bold underline"))
         lines.append(
             Text.assemble(
-                ("  Skill:   ", "dim"),
+                ("  Skill(s):   ", "dim"),
                 (skill_name, "bold magenta"),
             )
         )
@@ -584,7 +584,7 @@ def _show_day_detail(date_str: str, console: Console) -> bool:
         col_hdr.append("      Saved  ", style="bold underline")
         col_hdr.append("  %      ", style="bold underline")
         col_hdr.append("Transforms", style="bold underline")
-        col_hdr.append("  Skill          ", style="bold underline")
+        col_hdr.append("  Skill                ", style="bold underline")
         lines.append(col_hdr)
 
         if total == 0:

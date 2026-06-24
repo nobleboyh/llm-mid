@@ -1,10 +1,12 @@
 """ASGI middleware — detects ``$trigger`` tokens in user messages and injects
-skill content into the system prompt.
+skill content(s) into the system prompt.
 
-Trigger detection via ``$<skill-name>`` mention in user message content.
-The trigger token is stripped from the forwarded message. Skill content is
-prepended to (or appended after) the system prompt. A response header
-``X-GateMid-Skill-Applied`` signals which skill was activated.
+Trigger detection via ``$<skill-name>`` mention(s) in user message content.
+Multiple triggers in one message (e.g. ``$caveman $ponytail``) are all
+detected and injected. Trigger tokens are stripped from the forwarded
+message. Skill contents are appended to the system prompt in alphabetical
+order. A response header ``X-GateMid-Skill-Applied`` signals which skills
+were activated (comma-separated for multiple).
 
 Positioned between ``CaptureOriginalQuestionMiddleware`` and Headroom's
 ``CompressionMiddleware`` so the skill text is compressed with the rest of
@@ -119,38 +121,32 @@ class SkillInjectorMiddleware:
             return
 
         # ── Prepare skill info (used for injection + analytics) ──────────
-        skill_name, mutated = self._detect_and_inject(payload)
+        skill_names, mutated = self._detect_and_inject(payload)
 
-        if skill_name:
-            skill_content = get_skill(skill_name)
-            # Encode the mutated body (with stripped trigger, skill injected)
+        if skill_names:
+            # Encode the mutated body (with stripped triggers, skills injected)
             full_body = json.dumps(
                 mutated,
                 separators=(",", ":"),
                 ensure_ascii=False,
             ).encode("utf-8")
 
-            # Set context var for the compress function to pick up
-            skill_content = get_skill(skill_name)
-            token_count = _count_tokens(skill_content) if skill_content else 0
-            if skill_content:
-                skill_info_var.set({
-                    "skill_name": skill_name,
-                    "skill_tokens_pre_compression": token_count,
-                })
+            # Set context var for downstream consumers (callback, headroom)
+            total_tokens = sum(
+                _count_tokens(get_skill(s) or "") for s in skill_names
+            )
+            skill_info_var.set({
+                "skill_names": skill_names,
+                "skill_tokens_pre_compression": total_tokens,
+            })
 
             logger.info(
-                "[SkillInjector] path=%s — skill '%s' injected "
+                "[SkillInjector] path=%s — skill(s) '%s' injected "
                 "(%d tokens pre-compression)",
                 path,
-                skill_name,
-                token_count,
+                ", ".join(skill_names),
+                total_tokens,
             )
-
-            skill_info_var.set({
-                "skill_name": skill_name,
-                "skill_tokens_pre_compression": token_count,
-            })
         else:
             logger.info(
                 "[SkillInjector] path=%s — scanned %d messages, "
@@ -185,22 +181,23 @@ class SkillInjectorMiddleware:
             is_intermediate_chunk = is_body and message.get("more_body", False)
             log_level = logger.debug if is_intermediate_chunk else logger.info
             log_level(
-                "[SKILL_SEND] path=%s msg_type=%s more_body=%s skill_name=%s header_sent=%s",
+                "[SKILL_SEND] path=%s msg_type=%s more_body=%s skill_names=%s header_sent=%s",
                 path,
                 message.get("type"),
                 message.get("more_body", "N/A"),
-                skill_name,
+                skill_names,
                 header_sent,
             )
             if (
-                skill_name
+                skill_names
                 and message["type"] == "http.response.start"
                 and not header_sent
             ):
                 header_sent = True
                 headers = list(message.get("headers", []) or [])
                 headers.append(
-                    (b"x-gatemid-skill-applied", skill_name.encode("utf-8"))
+                    (b"x-gatemid-skill-applied",
+                     ",".join(skill_names).encode("utf-8"))
                 )
                 # Strip content-length — it may have changed
                 filtered_headers = [
@@ -220,26 +217,40 @@ class SkillInjectorMiddleware:
     @staticmethod
     def _detect_and_inject(
         payload: dict,
-    ) -> tuple[str | None, dict]:
-        """Scan messages for a ``$trigger``. If found:
+    ) -> tuple[list[str] | None, dict]:
+        """Scan messages for ALL ``$trigger`` tokens. If any found:
 
-        * strip the trigger from the user message
-        * inject skill content into the system prompt
+        * strip all triggers from the user message(s)
+        * inject all matched skill contents into the system prompt
+          (alphabetically ordered, each dedup-checked individually)
 
         Handles both string content (OpenAI) and list-of-blocks content
         (Anthropic /v1/messages — e.g. ``[{"type":"text","text":"..."}]``).
 
-        Returns ``(skill_name | None, mutated payload)``.
+        Returns ``(skill_names | None, mutated payload)`` where *skill_names*
+        is a sorted list of all valid trigger names found.
         """
         messages: list[dict] = payload.get("messages", [])
-        skill_name: str | None = None
-        skill_content: str | None = None
+        found_skills: set[str] = set()
 
-        def _find_trigger(text: str) -> re.Match | None:
-            return TRIGGER_PATTERN.search(text)
+        def _find_all_triggers(text: str) -> set[str]:
+            """Return the set of valid registered skill names found in *text*."""
+            matches = TRIGGER_PATTERN.findall(text)
+            names: set[str] = set()
+            for m in matches:
+                candidate = m.lower()
+                if get_skill(candidate) is not None:
+                    names.add(candidate)
+                else:
+                    logger.debug(
+                        "[SkillInjector] Trigger '$%s' not in registry — ignoring",
+                        candidate,
+                    )
+            return names
 
-        def _strip_trigger(text: str) -> str:
-            return TRIGGER_PATTERN.sub("", text, count=1).strip()
+        def _strip_all_triggers(text: str) -> str:
+            """Remove ALL ``$trigger`` tokens from *text*."""
+            return TRIGGER_PATTERN.sub("", text).strip()
 
         for msg in messages:
             if msg.get("role") != "user":
@@ -248,30 +259,18 @@ class SkillInjectorMiddleware:
 
             # ── String content (OpenAI /chat/completions) ─────────────
             if isinstance(content, str):
-                match = _find_trigger(content)
-                if not match:
-                    continue
-
-                candidate = match.group(1).lower()
-                found = get_skill(candidate)
-                if found is None:
+                triggers = _find_all_triggers(content)
+                if triggers:
+                    found_skills.update(triggers)
+                    msg["content"] = _strip_all_triggers(content)
                     logger.debug(
-                        "[SkillInjector] Trigger '$%s' not in registry — ignoring",
-                        candidate,
+                        "[SkillInjector] Triggers '%s' matched (string content) — "
+                        "injecting",
+                        ", ".join(sorted(triggers)),
                     )
-                    continue
-
-                skill_name = candidate
-                skill_content = found
-                msg["content"] = _strip_trigger(content)
-                logger.debug(
-                    "[SkillInjector] Trigger '$%s' matched (string content) — injecting",
-                    skill_name,
-                )
-                break
 
             # ── List-of-blocks content (Anthropic /v1/messages) ───────
-            if isinstance(content, list):
+            elif isinstance(content, list):
                 for block in content:
                     if not isinstance(block, dict):
                         continue
@@ -281,47 +280,41 @@ class SkillInjectorMiddleware:
                     if not isinstance(text, str):
                         continue
 
-                    match = _find_trigger(text)
-                    if not match:
-                        continue
-
-                    candidate = match.group(1).lower()
-                    found = get_skill(candidate)
-                    if found is None:
+                    triggers = _find_all_triggers(text)
+                    if triggers:
+                        found_skills.update(triggers)
+                        block["text"] = _strip_all_triggers(text)
                         logger.debug(
-                            "[SkillInjector] Trigger '$%s' not in registry — ignoring",
-                            candidate,
+                            "[SkillInjector] Triggers '%s' matched "
+                            "(list block) — injecting",
+                            ", ".join(sorted(triggers)),
                         )
-                        continue
 
-                    skill_name = candidate
-                    skill_content = found
-                    block["text"] = _strip_trigger(text)
-                    logger.debug(
-                        "[SkillInjector] Trigger '$%s' matched (list block) — injecting",
-                        skill_name,
-                    )
-                    break
+        if not found_skills:
+            return None, payload
 
-                # Did we find and strip a trigger in a list block?
-                if skill_name:
-                    break
-
-        if skill_name and skill_content:
+        # ── Inject each skill that isn't already present ──────────────
+        # Iterate in alphabetical order for deterministic system prompt.
+        for skill_name in sorted(found_skills):
+            skill_content = get_skill(skill_name)
+            if not skill_content:
+                continue
             if SkillInjectorMiddleware._already_injected(payload, skill_content):
-                # Duplicate invocation — skill content already present.
-                # No mutation needed.
                 logger.debug(
-                    "[SkillInjector] skill '%s' already "
-                    "present in system prompt — skipping duplicate injection",
+                    "[SkillInjector] skill '%s' already present in "
+                    "system prompt — skipping duplicate injection",
                     skill_name,
                 )
-                return None, payload
+                continue
             payload = SkillInjectorMiddleware._inject_system_prompt(
                 payload, skill_content,
             )
+            logger.debug(
+                "[SkillInjector] skill '%s' — injecting into system prompt",
+                skill_name,
+            )
 
-        return skill_name, payload
+        return sorted(found_skills), payload
 
     @staticmethod
     def _already_injected(payload: dict, skill_content: str) -> bool:

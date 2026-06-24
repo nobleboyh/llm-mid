@@ -103,19 +103,21 @@ def _patched_compress(messages, model="claude-sonnet-4-5-20250929",
                 prompt_after=json.dumps(result.messages, ensure_ascii=False),
             )
 
-            # ── Enrich Redis hash with skill analytics (if a skill was injected) ──
+            # ── Enrich Redis hash with skill analytics (if skills were injected) ──
             from proxy.skill_injector import skill_info_var
             skill_info = skill_info_var.get()
             if skill_info:
                 from eval.redis_store import r as redis_client
+                skill_names = skill_info.get("skill_names", [])
+                mapping = {
+                    "skill_name": ", ".join(skill_names) if skill_names else "",
+                    "skill_tokens_pre_compression": str(
+                        skill_info.get("skill_tokens_pre_compression", 0),
+                    ),
+                }
                 redis_client.hset(
                     f"{HEADROOM_CALL_PREFIX}{call_id}",
-                    mapping={
-                        "skill_name": skill_info["skill_name"],
-                        "skill_tokens_pre_compression": str(
-                            skill_info["skill_tokens_pre_compression"],
-                        ),
-                    },
+                    mapping=mapping,
                 )
         except Exception:
             pass  # Redis storage is best-effort; never block compression
