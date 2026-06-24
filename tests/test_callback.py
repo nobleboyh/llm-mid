@@ -31,6 +31,8 @@ def minimal_response():
 
 def _standard_kwargs(**overrides) -> dict:
     """Minimal kwargs that pass the original_question check and enqueue."""
+    from proxy.capture_original import original_question_var
+
     base = {
         "model": "gemini-flash",
         "metadata": {
@@ -39,10 +41,23 @@ def _standard_kwargs(**overrides) -> dict:
             "prompt_id": "v2_prompt",
             "retrieved_context": ["Patient record 123"],
         },
-        "messages": [],  # no longer used by callback, but kept to match reality
+        "messages": [],
     }
     base.update(overrides)
+
+    # Mirror original_question to contextVar — the callback reads it directly.
+    question = (base.get("metadata") or {}).get("original_question", "")
+    if question.strip():
+        original_question_var.set(question)
+
     return base
+
+
+@pytest.fixture(autouse=True)
+def _reset_original_question_context():
+    """Reset the contextVar before each test so tests don't leak."""
+    from proxy.capture_original import original_question_var
+    original_question_var.set("")
 
 
 # ── _should_skip ──────────────────────────────────────────────────────────────

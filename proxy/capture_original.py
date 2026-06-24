@@ -16,6 +16,7 @@ Execution order:
 
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
 from collections.abc import MutableMapping
@@ -24,6 +25,14 @@ from typing import Any
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 logger = logging.getLogger("proxy.capture_original")
+
+# Side-channel for passthrough endpoints (/v1/messages) where LiteLLM never
+# calls add_litellm_data_to_request — the request-body metadata never reaches
+# the callback's model_call_details, so we write it here for the callback to
+# pick up directly.
+original_question_var: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "original_question", default="",
+)
 
 # Paths that carry user messages
 _CHAT_PATHS = (
@@ -82,46 +91,31 @@ class CaptureOriginalQuestionMiddleware:
         try:
             data = json.loads(full_body)
             messages = data.get("messages", [])
-            metadata = data.get("metadata", {})
-            logger.debug(
-                "CaptureOriginal — %d messages, metadata keys: %s",
-                len(messages), list(metadata.keys()),
-            )
 
-            # Don't re-process if already captured (idempotent)
-            if "original_question" not in metadata:
-                original_question = ""
-                for msg in reversed(messages):
-                    if isinstance(msg, dict) and msg.get("role") == "user":
-                        content = msg.get("content", "")
-                        if isinstance(content, list):
-                            original_question = " ".join(
-                                p.get("text", "") for p in content
-                                if isinstance(p, dict) and p.get("type") == "text"
-                            )
-                        else:
-                            original_question = str(content)
-                        break
+            original_question = ""
+            for msg in reversed(messages):
+                if isinstance(msg, dict) and msg.get("role") == "user":
+                    content = msg.get("content", "")
+                    if isinstance(content, list):
+                        original_question = " ".join(
+                            p.get("text", "") for p in content
+                            if isinstance(p, dict) and p.get("type") == "text"
+                        )
+                    else:
+                        original_question = str(content)
+                    break
 
-                if original_question.strip():
-                    metadata["original_question"] = original_question
-                    data["metadata"] = metadata
-                    full_body = json.dumps(
-                        data,
-                        separators=(",", ":"),
-                        ensure_ascii=False,
-                    ).encode("utf-8")
-                    logger.debug(
-                        "CaptureOriginal — injected original_question: %.80s",
-                        original_question,
-                    )
-                else:
-                    logger.debug(
-                        "CaptureOriginal — no user message found in %d messages",
-                        len(messages),
-                    )
+            if original_question.strip():
+                original_question_var.set(original_question)
+                logger.debug(
+                    "CaptureOriginal — stored original_question=%r path=%s",
+                    original_question, path,
+                )
             else:
-                logger.debug("CaptureOriginal — original_question already present")
+                logger.debug(
+                    "CaptureOriginal — no user message in %d messages path=%s",
+                    len(messages), path,
+                )
 
         except json.JSONDecodeError:
             logger.debug("CaptureOriginal — non-JSON body")

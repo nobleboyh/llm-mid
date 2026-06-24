@@ -38,19 +38,28 @@ class RagasLogger(CustomLogger):
         if meta.get("_ragas_eval_call"):
             return True
 
+        # ComplexityRouter resolves ragas-eval → deepseek-v4-flash.
+        # The original model survives in litellm_params.proxy_server_request.body.model.
+        # ponytail: .get(key, default) returns None when key exists with None value.
+        _lp = kwargs.get("litellm_params")
+        if isinstance(_lp, dict) and ((_lp.get("proxy_server_request") or {}).get("body") or {}).get("model", "").startswith(_EVAL_MODEL_PREFIX):
+            return True
+
         return False
 
     def log_success_event(self, kwargs, response_obj, start_time, end_time):
         if self._should_skip(kwargs):
             return
 
-        meta = kwargs.get("metadata", {})
+        # LiteLLM uses "litellm_metadata" for /v1/messages (Anthropic API)
+        # and nests user-supplied metadata under "requester_metadata".
+        # For /v1/chat/completions it uses the plain "metadata" key.
+        user_meta = kwargs.get("metadata") or kwargs.get("litellm_metadata") or {}
+        rm = user_meta.get("requester_metadata") or {}
 
-        # Use the original pre-compression question captured by the
-        # CaptureOriginalQuestionMiddleware. If absent, skip scoring
-        # entirely — scoring against compressed/transformed text would
-        # produce meaningless Ragas metrics.
-        question = meta.get("original_question", "")
+        # Context variable set by CaptureOriginalQuestionMiddleware.
+        from proxy.capture_original import original_question_var
+        question = original_question_var.get()
 
         def _extract_content(content) -> str:
             """Normalize LiteLLM Message.content to a string.
@@ -141,10 +150,10 @@ class RagasLogger(CustomLogger):
             "timestamp":        datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "question":         question,
             "answer":           answer,
-            "contexts":         meta.get("retrieved_context", []),
-            "ground_truth":     meta.get("ground_truth", ""),
-            "request_category": meta.get("request_category", "general"),
-            "prompt_id":        meta.get("prompt_id", "default"),
+            "contexts":         user_meta.get("retrieved_context", []) or rm.get("retrieved_context", []),
+            "ground_truth":     user_meta.get("ground_truth", "") or rm.get("ground_truth", ""),
+            "request_category": user_meta.get("request_category", "general") or rm.get("request_category", "general"),
+            "prompt_id":        user_meta.get("prompt_id", "default") or rm.get("prompt_id", "default"),
             "model":            kwargs.get("model", ""),
             "tokens_in":        usage.get("prompt_tokens", 0),
             "tokens_out":       usage.get("completion_tokens", 0),
@@ -173,9 +182,10 @@ class RagasLogger(CustomLogger):
         except Exception:
             logger.exception("Failed to enqueue call record")
 
-    async def async_post_call_success_hook(self, data, user_api_key_dict, response):
-        """Async proxy hook — delegates to the shared sync logic."""
-        self.log_success_event(data, response, None, None)
+    async def async_log_success_event(self, kwargs, response_obj, start_time, end_time):
+        """Async hook for all requests (streaming + non-streaming).
+        Delegates to the shared sync logic."""
+        self.log_success_event(kwargs, response_obj, start_time, end_time)
 
 
 ragas_callback = RagasLogger()
