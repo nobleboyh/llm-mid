@@ -80,11 +80,11 @@ def main():
     # Create Gemini-based embeddings for metrics that need them
     # (answer_relevancy, context_recall). Uses the Gemini REST API
     # via lightweight httpx — no PyTorch/sentence-transformers needed.
-    from ragas.embeddings.base import LangchainEmbeddingsWrapper
+    # GeminiEmbeddings extends ragas BaseRagasEmbedding directly so no
+    # deprecated LangchainEmbeddingsWrapper is required.
     from eval.gemini_embeddings import GeminiEmbeddings
 
-    raw_embeddings = GeminiEmbeddings(api_key=os.environ.get("GEMINI_API_KEY"))
-    ragas_embeddings = LangchainEmbeddingsWrapper(raw_embeddings)
+    ragas_embeddings = GeminiEmbeddings(api_key=os.environ.get("GEMINI_API_KEY"))
 
     from eval.worker import eval_worker
 

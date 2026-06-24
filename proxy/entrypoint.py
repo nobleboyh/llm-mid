@@ -34,6 +34,7 @@ for name in (
     "proxy.guardrails",
     "guardrails",
     "proxy.skill_injector",
+    "proxy.capture_original",
     "proxy.callback",
     "eval.redis_store",
 ):
