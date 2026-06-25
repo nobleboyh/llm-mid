@@ -41,9 +41,14 @@ class RagasLogger(CustomLogger):
         # ComplexityRouter resolves ragas-eval → deepseek-v4-flash.
         # The original model survives in litellm_params.proxy_server_request.body.model.
         # ponytail: .get(key, default) returns None when key exists with None value.
-        _lp = kwargs.get("litellm_params")
-        if isinstance(_lp, dict) and ((_lp.get("proxy_server_request") or {}).get("body") or {}).get("model", "").startswith(_EVAL_MODEL_PREFIX):
-            return True
+        _lp = kwargs.get("litellm_params") or {}
+        if isinstance(_lp, dict):
+            if ((_lp.get("proxy_server_request") or {}).get("body") or {}).get("model", "").startswith(_EVAL_MODEL_PREFIX):
+                return True
+            # ponytail: router-resolved calls (eval worker) have no
+            # proxy_server_request — skip to avoid noisy warnings.
+            if not _lp.get("proxy_server_request") and kwargs.get("model", "").startswith("deepseek-v4"):
+                return True
 
         return False
 
@@ -60,6 +65,22 @@ class RagasLogger(CustomLogger):
         # Context variable set by CaptureOriginalQuestionMiddleware.
         from proxy.capture_original import original_question_var
         question = original_question_var.get()
+
+        # ponytail: proxy_server_request.body has the original request body
+        # (pre-resolution, pre-compression) — read the user question from there
+        # when ContextVar is empty (router-resolved calls on different thread).
+        if not question.strip():
+            _psr = (kwargs.get("litellm_params") or {}).get("proxy_server_request") or {}
+            if isinstance(_psr, dict):
+                for msg in (_psr.get("body") or {}).get("messages", []):
+                    if isinstance(msg, dict) and msg.get("role") == "user":
+                        c = msg.get("content", "")
+                        if isinstance(c, str):
+                            question = c
+                        elif isinstance(c, list):
+                            parts = [b.get("text", "") for b in c if isinstance(b, dict) and b.get("type") == "text"]
+                            question = " ".join(parts)
+                        break
 
         def _extract_content(content) -> str:
             """Normalize LiteLLM Message.content to a string.
