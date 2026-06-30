@@ -567,7 +567,7 @@ YAML
           questionComplexity: 0.05
         tier_boundaries:
           simple_medium: 0.15
-          medium_complex: 0.35
+          medium_complex: 0.3
           complex_reasoning: 0.55
       complexity_router_default_model: ${TIER_SIMPLE}
 
