@@ -13,78 +13,62 @@ Local-dev AI gateway combining [Headroom](https://github.com/chopratejas/headroo
 
 ## Architecture
 
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│                        GateMid Proxy (:4000)                         │
-│                                                                      │
-│  Inbound Request                                                     │
-│       │                                                              │
-│       ▼                                                              │
-│  ┌──────────────────────────────────────────────────────────────┐    │
-│  │              ASGI Middleware Stack (registered order)         │    │
-│  │                                                               │    │
-│  │  1. ApiKeyMaskingMiddleware        (outermost — runs first)   │    │
-│  │     └─ Masks API keys in req/res bodies (8 regex patterns)    │    │
-│  │                                                               │    │
-│  │  2. CaptureOriginalQuestionMiddleware                         │    │
-│  │     └─ Snapshots pre-compression user question into metadata  │    │
-│  │                                                               │    │
-│  │  3. SkillInjectorMiddleware                                   │    │
-│  │     ├─ Detects `$trigger` tokens (e.g. `$ponytail`, `$caveman`)│
-│  │     └─ Injects skill content(s) into system prompt pre-compress│
-│  │                                                               │    │
-│  │  4. Headroom CompressionMiddleware  (innermost — runs last)   │    │
-│  │     ├─ SmartCrusher  (JSON compression)                       │    │
-│  │     ├─ CodeCompressor (AST-based)                             │    │
-│  │     └─ CacheAligner  (KV cache prefix alignment)              │    │
-│  └──────────────────────────────────────────────────────────────┘    │
-│       │                                                              │
-│       ▼                                                              │
-│  ┌──────────────────────────────────────────────────────────────┐    │
-│  │              LiteLLM Proxy Engine                             │    │
-│  │                                                               │    │
-│  │  ComplexityRouter (team-smart-router)                         │    │
-│  │   ├─ SIMPLE    → model-of-choice  (greetings, yes/no)         │    │
-│  │   ├─ MEDIUM    → model-of-choice  (general queries)           │    │
-│  │   ├─ COMPLEX   → model-of-choice  (code, architecture)        │    │
-│  │   └─ REASONING → model-of-choice  (step-by-step, debugging)  │    │
-│  │                                                               │    │
-│  │  Provider translation (Anthropic ↔ OpenAI/Gemini/DeepSeek)    │    │
-│  └──────────────────────────────────────────────────────────────┘    │
-│       │                                                              │
-│       ▼                                                              │
-│  ┌──────────────────────────────────────────────────────────────┐    │
-│  │              RagasLogger (Custom Callback)                    │    │
-│  │  └─ On success: extracts {question, answer, contexts}         │    │
-│  │     └─ RPUSH to Redis eval:pending queue → async scoring      │    │
-│  └──────────────────────────────────────────────────────────────┘    │
-└──────────────────────────────────────────────────────────────────────┘
-       │  HTTPS (outbound to provider)
-       ▼
-Gemini / DeepSeek API
+### Inbound flow
 
+```mermaid
+flowchart TB
+    subgraph Proxy["GateMid Proxy (:4000)"]
+        direction TB
+        IN["Inbound Request"]
 
-┌──────────────────────────────────────────────────────────────────────┐
-│                   Eval Worker (separate container)                   │
-│                                                                      │
-│  1. BLPOP from Redis eval:pending queue                              │
-│  2. Ragas scoring (DeepSeek-as-judge + Gemini embeddings)            │
-│     ├─ Faithfulness *        (weight: 0.4)                           │
-│     ├─ Answer Relevancy      (weight: 0.4 / 1.0 without ctx)         │
-│     └─ Context Precision *   (weight: 0.2)                           │
-│     * only scored when contexts are present — composite rebalances   │
-│  3. Write scored record → Redis (call_id → hash)                     │
-│  4. Update global & category leaderboards (sorted sets)              │
-│                                                                      │
-│  Redis Data Layout:                                                  │
-│  ├─ eval:pending            List    — unscored call queue           │
-│  ├─ eval:call:{call_id}     Hash    — full scored record (30d TTL) │
-│  ├─ eval:scores:all         ZSet    — global composite ranking      │
-│  ├─ eval:scores:cat:{cat}   ZSet    — per-category ranking          │
-│  └─ eval:scores:prompt:{id} ZSet    — per-prompt version ranking    │
-└──────────────────────────────────────────────────────────────────────┘
+        subgraph ASGI["ASGI Middleware Stack"]
+            direction LR
+            M1["ApiKeyMasking<br/>Hides API keys from logs"]
+            M2["CaptureOriginal<br/>Saves the question before compression"]
+            M3["SkillInjector<br/>Activates $trigger skills in system prompt"]
+            M4["Headroom Compression<br/>Compresses prompts<br/>(JSON + code + cache)"]
+            M1 --> M2 --> M3 --> M4
+        end
+
+        subgraph LiteLLM["LiteLLM Routing Engine"]
+            direction TB
+            CR["ComplexityRouter<br/>Picks model by prompt difficulty"]
+            PT["Provider Translation<br/>Anthropic ↔ OpenAI / Gemini / DeepSeek"]
+            CR --> PT
+        end
+
+        subgraph Callback["RagasLogger"]
+            RL["Async quality scoring callback<br/>(question, answer, context → Redis queue)"]
+        end
+
+        IN --> M1
+        M4 --> CR
+        PT -.->|enqueues for scoring| RL
+    end
+
+    PT -->|HTTPS| Provider
+    Provider[("Gemini / DeepSeek API")]
 ```
 
+### Eval worker (separate container)
+
+```mermaid
+flowchart LR
+    RedisQ[("Redis eval:pending<br/>queue of unscored calls")] -->|BLPOP & score| EvalWorker
+
+    subgraph EvalWorker["Eval Worker (separate container)"]
+        direction TB
+        Scoring["Score each response (DeepSeek as judge + Gemini embeddings)"]
+        ScoringD["<b>Faithfulness</b> — Is the answer grounded in the context?<br/><b>Answer Relevancy</b> — Does the answer address the question?<br/><b>Context Precision</b> — Is every piece of context relevant?<br/><b>Context Recall</b> — Does the answer cover the context?<br/><br/><small>Metrics depending on context are only used when context exists.<br/>If ground truth is unavailable, context recall is skipped.<br/>The composite score is dynamically rebalanced so it always maxes at 1.0.</small>"]
+        Results["Save scores to Redis leaderboards"]
+        Scoring-->ScoringD-->Results
+    end
+
+    Results-->RedisCalls[("eval:call:{id}<br/>full record, 30-day expiry")]
+    Results-->RedisGlobal[("eval:scores:all<br/>global ranking")]
+    Results-->RedisCat[("eval:scores:cat:{cat}<br/>per-category ranking")]
+    Results-->RedisPrompt[("eval:scores:prompt:{id}<br/>per-prompt version ranking")]
+```
 ### Key architectural decisions
 
 | Decision | Choice | Rationale |
@@ -137,9 +121,8 @@ GATEMID_URL=http://localhost:4000 GATEMID_API_KEY=sk-local-dev-key ./setup-gatem
 
 The script supports **Claude Code** and **OpenCode** — it writes the correct config file for each, creates a timestamped backup of your existing settings, and handles uninstall cleanly.
 
-**Option B — Manual setup** (detailed below):
-
----
+<details>
+<summary><strong>Option B — Manual setup</strong> (click to expand)</summary>
 
 ## Claude Code Setup
 
@@ -175,22 +158,28 @@ Claude Code now sends all requests through GateMid. The complexity router classi
 
 ### How it works
 
-```
-claude (CLI)
-  │  Anthropic-format request
-  │  ANTHROPIC_BASE_URL → GateMid (:4000)
-  ▼
-GateMid (LiteLLM Proxy)
-  │  1. ApiKeyMasking sanitizes request body
-  │  2. CaptureOriginal snapshots the raw question
-  │  3. SkillInjector detects `$trigger` and injects skill
-  │  4. Headroom ASGI middleware compresses context
-  │  4. ComplexityRouter classifies prompt → picks model
-  │  5. LiteLLM translates Anthropic → Gemini/Deepseek format
-  │  6. Routes to resolved model
-  │  7. RagasLogger enqueues {question, answer} for async scoring
-  ▼
-Gemini / Deepseek API
+```mermaid
+flowchart LR
+    subgraph Client["Claude Code (CLI)"]
+        CF["Anthropic-format request<br/>ANTHROPIC_BASE_URL → GateMid (:4000)"]
+    end
+
+    subgraph GateMid["GateMid Proxy"]
+        direction TB
+        A["1. ApiKeyMasking<br/>sanitizes request body"]
+        B["2. CaptureOriginal<br/>snapshots raw question"]
+        C["3. SkillInjector<br/>detects $trigger, injects skill"]
+        D["4. Headroom<br/>compresses context"]
+        E["5. ComplexityRouter<br/>classifies prompt, selects model"]
+        F["6. LiteLLM<br/>translates to Gemini/DeepSeek format"]
+        G["7. RagasLogger<br/>enqueues response for scoring"]
+        A-->B-->C-->D-->E-->F-->G
+    end
+
+    Provider[("Gemini / DeepSeek API")]
+
+    Client-->GateMid
+    GateMid-->Provider
 ```
 
 > **Note:** GateMid translates between Anthropic and OpenAI/Gemini/Deepseek formats automatically via LiteLLM's provider abstraction. Claude Code's tool use, streaming, and system prompts all work.
@@ -274,6 +263,8 @@ opencode
 
 Use `/connect` in the Open Code CLI and select the **GateMid** provider, or set the default model to `team-smart-router` for automatic routing.
 
+</details>
+
 ---
 
 ## How Routing Works
@@ -309,22 +300,26 @@ Every LLM response is scored asynchronously for quality using Ragas. The eval-wo
 
 ### Scoring pipeline
 
-```
-LLM Response → RagasLogger.log_success_event()
-                    │ extract question, answer, usage
-                    ▼
-              Redis RPUSH "eval:pending"
-                    │
-                    ▼
-              eval-worker (BLPOP → score → Redis write)
-                    │
-                    ├─ Faithfulness *    40%  — Is the answer grounded in context?
-                    ├─ Answer Relevancy  40%  — How relevant is the answer to the question?
-                    ├─ Context Precision * 20%  — Does context contain only relevant info?
-                    └─ * skipped when call has no retrieved contexts; composite reweights to relevancy only
-                    │
-                    ▼
-              Redis scored records + leaderboards
+```mermaid
+flowchart TB
+    LLM["LLM response received"] --> Logger["RagasLogger saves (question, answer, context)"]
+
+    Logger --> RedisQ[("Redis queue: eval:pending")]
+
+    RedisQ -->|Picked up by| Worker
+
+    subgraph Worker["Eval Worker (separate container)"]
+        direction TB
+        Score["Ragas scoring engine"]
+        ScoreD["<b>Faithfulness</b> — 0.3 — Is the answer grounded in the context?<br/><b>Answer Relevancy</b> — 0.3 — Does the answer match the question?<br/><b>Context Precision</b> — 0.2 — Is every piece of context useful?<br/><b>Context Recall</b> — 0.2 — Does the answer cover everything?<br/><br/><small>If a metric cannot be calculated (e.g. no context available),<br/>it is skipped and the remaining weights are rebalanced<br/>so the maximum score is always 1.0.</small>"]
+        Results["Results saved to Redis"]
+        Score-->ScoreD-->Results
+    end
+
+    Results --> RedisCall[("eval:call:{id}<br/>full record, 30-day expiry")]
+    Results --> RedisBest[("eval:scores:all<br/>global best/worst ranking")]
+    Results --> RedisCat[("eval:scores:cat:{cat}<br/>per-category ranking")]
+    Results --> RedisPrompt[("eval:scores:prompt:{id}<br/>per-prompt version ranking")]
 ```
 
 ### View scores
@@ -365,9 +360,13 @@ docker exec -it gatemid-headroom python -m eval.cli score --n 50
 | `Esc` / `q` | Close the detail view and return to the score board |
 | `q` | Quit the score board |
 
-The full detail view shows everything without truncation: **call ID, composite score (full precision), request category, model name, prompt version, token counts, timestamp, per-dimension ragas scores (faithfulness\*, relevancy, precision\*), the complete question, and the complete answer.** Close it with `Esc`, `q`, or `Enter` to resume browsing.
+The full detail view shows everything without truncation: **call ID, composite score (full precision), request category, model name, prompt version, token counts, timestamp, per-dimension ragas scores (faithfulness\*, relevancy\*, context precision\*, context recall\*\*), the complete question, and the complete answer.** Close it with `Esc`, `q`, or `Enter` to resume browsing.
 
-\* Faithfulness and context precision are only scored when the call has retrieved contexts. For non-RAG calls (no context), the composite is driven by answer relevancy alone.
+> **Metric availability:**
+> - Faithfulness and context precision are only scored when the call has retrieved contexts.
+> - Context recall and context precision additionally require a ground truth answer.
+> - When a metric is unavailable the composite is dynamically re-normalised so it always maxes at 1.0.
+> - For calls without any retrieved context the composite is driven by answer relevancy alone.
 
 > **Note:** Requires `-it` (interactive TTY) for TUI rendering. Uses [Rich](https://github.com/Textualize/rich) for terminal rendering (already installed in the eval-worker container).
 
