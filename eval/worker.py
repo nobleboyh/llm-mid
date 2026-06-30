@@ -33,24 +33,49 @@ logger = logging.getLogger("eval.worker")
 # composite rebalances to faithfulness × 0.5 + answer_relevancy × 0.5.
 
 METRIC_WEIGHTS = {
-    "faithfulness": 0.4,
-    "answer_relevancy": 0.4,
+    "faithfulness": 0.3,
+    "answer_relevancy": 0.3,
     "context_precision": 0.2,
+    "context_recall": 0.2,
 }
 METRIC_WEIGHTS_NO_CTX = {
     "answer_relevancy": 1.0,
 }
 
 
-def _sanitize(val: float) -> float:
-    """Replace NaN / inf with 0.0 — Redis ZADD rejects non-finite floats."""
-    return 0.0 if math.isnan(val) or math.isinf(val) else val
+def _sanitize(val: float | None) -> float:
+    """Replace NaN / inf / None with 0.0 — Redis ZADD rejects non-finite floats."""
+    if val is None:
+        return 0.0
+    if math.isnan(val) or math.isinf(val):
+        return 0.0
+    return val
 
 
 def compute_composite(scores: dict, has_context: bool) -> float:
-    """Weighted composite of available Ragas metric scores."""
+    """Weighted composite of available Ragas metric scores, normalised to [0, 1].
+
+    With context:
+        * faithfulness  × 0.3
+        * answer_relevancy × 0.3
+        * context_precision × 0.2
+        * context_recall × 0.2
+
+    When ground truth is absent *context_recall* will be None — the weights
+    are re-normalised dynamically so the composite still maxes at 1.0.
+
+    Without context:
+        * answer_relevancy × 1.0
+    """
     weights = METRIC_WEIGHTS if has_context else METRIC_WEIGHTS_NO_CTX
-    return sum(_sanitize(scores.get(m, 0.0)) * w for m, w in weights.items())
+    total = 0.0
+    denom = 0.0
+    for m, w in weights.items():
+        v = scores.get(m)
+        if v is not None and not (isinstance(v, float) and (math.isnan(v) or math.isinf(v))):
+            total += v * w
+            denom += w
+    return total / denom if denom > 0 else 0.0
 
 
 def score_record(record: dict, llm=None, embeddings=None) -> dict:
@@ -112,7 +137,8 @@ def score_record(record: dict, llm=None, embeddings=None) -> dict:
     metrics = [answer_relevancy]
     if has_context:
         metrics.insert(0, faithfulness)
-        metrics.append(context_precision)
+        if has_ground_truth:
+            metrics.append(context_precision)
     if has_ground_truth:
         metrics.append(context_recall)
 
@@ -134,7 +160,7 @@ def score_record(record: dict, llm=None, embeddings=None) -> dict:
                              if has_context else None,
         "answer_relevancy":  _sanitize(round(float(row.get("answer_relevancy", 0.0)), 4)),
         "context_precision": _sanitize(round(float(row.get("context_precision", 0.0)), 4))
-                             if has_context else None,
+                             if has_context and has_ground_truth else None,
         "context_recall":    _sanitize(round(float(row.get("context_recall", 0.0)), 4))
                              if has_ground_truth else None,
     }
@@ -162,6 +188,10 @@ def eval_worker(once: bool = False, llm=None, embeddings=None):
         answer_relevancy. Passed through to score_record().
     """
     logger.info("Eval worker started — waiting for call records")
+    if embeddings is None:
+        logger.warning("embeddings is None — answer_relevancy "
+                       "(%.0f%%+ of composite) will score as 0.0",
+                       max(w * 100 for w in METRIC_WEIGHTS.values()))
     retry_delay = 1
     while True:
         try:

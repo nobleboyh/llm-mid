@@ -45,8 +45,10 @@ class RagasLogger(CustomLogger):
         if isinstance(_lp, dict):
             if ((_lp.get("proxy_server_request") or {}).get("body") or {}).get("model", "").startswith(_EVAL_MODEL_PREFIX):
                 return True
-            # ponytail: router-resolved calls (eval worker) have no
-            # proxy_server_request — skip to avoid noisy warnings.
+            # ponytail: router-resolved calls (eval worker only — no
+            # proxy_server_request on internal Ragas→LiteLLM calls).
+            # `startswith("deepseek-v4")` is a safety belt; tighten when
+            # ComplexityRouter targets a different model family.
             if not _lp.get("proxy_server_request") and kwargs.get("model", "").startswith("deepseek-v4"):
                 return True
 

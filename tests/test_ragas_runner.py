@@ -35,10 +35,14 @@ sys.modules["ragas.metrics._answer_relevance"] = _mock_answer_relevance
 
 class TestComputeComposite:
     def test_full_weights(self):
-        scores = {"faithfulness": 0.8, "answer_relevancy": 0.7, "context_precision": 0.6}
+        scores = {
+            "faithfulness": 0.8,
+            "answer_relevancy": 0.7,
+            "context_precision": 0.6,
+        }
         composite = compute_composite(scores, has_context=True)
-        # 0.8*0.4 + 0.7*0.4 + 0.6*0.2 = 0.32 + 0.28 + 0.12 = 0.72
-        assert composite == pytest.approx(0.72)
+        # (0.8*0.3 + 0.7*0.3 + 0.6*0.2) / (0.3+0.3+0.2) = 0.57/0.8 = 0.7125
+        assert composite == pytest.approx(0.7125)
 
     def test_no_context_rebalance(self):
         scores = {"faithfulness": None, "answer_relevancy": 0.6, "context_precision": None}
@@ -59,8 +63,9 @@ class TestComputeComposite:
     def test_missing_metric_defaults_zero(self):
         scores = {"faithfulness": 0.5}
         composite = compute_composite(scores, has_context=True)
-        # 0.5*0.4 + 0.0*0.4 + 0.0*0.2 = 0.20
-        assert composite == pytest.approx(0.20)
+        # only faithfulness (weight 0.3) is present and non-None:
+        # (0.5*0.3) / 0.3 = 0.5
+        assert composite == pytest.approx(0.5)
 
 
 # ── score_record (with mocked Ragas evaluate) ─────────────────────────────────
@@ -172,8 +177,10 @@ class TestScoreRecord:
         assert result["composite_score"] == pytest.approx(0.75)  # 0.75 * 1.0
 
     def test_no_gt_no_recall_scored(self, mock_evaluate, call_record):
+        """When ground_truth is absent, context_precision and context_recall are None."""
         result = score_record(call_record)
         assert result["scores"]["context_recall"] is None
+        assert result["scores"]["context_precision"] is None
 
     def test_with_ground_truth_shows_recall(self, mock_evaluate, call_record):
         """When ground_truth is present, context_recall should be scored."""
