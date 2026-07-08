@@ -16,6 +16,7 @@ COPY guardrails ./guardrails/
 COPY skills ./proxy/skills/
 COPY __init__.py ./proxy/
 COPY callback.py ./proxy/
+COPY fallback_logger.py ./proxy/
 COPY capture_original.py ./proxy/
 COPY skill_injector.py ./proxy/
 

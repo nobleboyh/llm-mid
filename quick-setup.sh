@@ -70,9 +70,13 @@ _model_num_to_name() {
     local num="$1" i=0 m
     for m in "${ENABLED_MODELS[@]}"; do
         i=$((i + 1))
-        [[ "$i" -eq "$num" ]] && echo "$m" && return 0
+        if [[ "$i" -eq "$num" ]]; then
+            echo "$m"
+            return 0
+        fi
     done
-    return 1
+    echo ""
+    return 0
 }
 
 # _model_is_valid <model> — returns 0 if model is in ENABLED_MODELS
@@ -181,6 +185,33 @@ model_env() {
         github-llama)                    echo "GITHUB_API_KEY" ;;
         *)                               echo "" ;;
     esac
+}
+
+# ── Fallback configuration (set by assign_fallbacks step) ─────────────────────
+# Space-separated "model|fallback" pairs, e.g. "gemini-flash|deepseek-flash"
+FALLBACK_PAIRS=""
+
+# Returns the fallback model for a given primary model, or empty string if none.
+# Always returns 0 so $() callers don't trigger set -e on bash 3.2 (macOS).
+get_fallback() {
+    local model="$1" pair m fb
+    for pair in $FALLBACK_PAIRS; do
+        m="${pair%%|*}"
+        fb="${pair##*|}"
+        if [[ "$m" == "$model" ]]; then
+            echo "$fb"
+            return 0
+        fi
+    done
+    echo ""
+    return 0
+}
+
+# Tells whether a model has a fallback configured (and it's still ENABLED).
+_has_fallback() {
+    local fb fb
+    fb=$(get_fallback "$1")
+    [[ -n "$fb" ]] && _model_is_valid "$fb"
 }
 
 # ── Step 1: Provider Selection ─────────────────────────────────────────────
@@ -409,6 +440,69 @@ assign_tiers() {
     done
 }
 
+# ── Step 3b: Model Fallback Assignment ──────────────────────────────────────
+# For each enabled model, the user picks which model to auto-fallback to
+# when the primary API key fails. The fallback is registered under the same
+# model_name with order=2, so the Router tries it transparently.
+
+assign_fallbacks() {
+    header "Model Fallback Assignment (auto-failover)"
+
+    echo "  For each enabled model, pick which OTHER model to auto-fallback"
+    echo "  to when the primary API key fails (401/429/timeout/cooldown)."
+    echo "  The fallback runs under the SAME model_name — the complexity"
+    echo "  router doesn't need any config changes."
+    echo ""
+    echo "  Type a number or model name, or leave blank for no fallback."
+    echo ""
+    _print_model_menu
+    echo ""
+
+    FALLBACK_PAIRS=""
+    local m fb prompt default_num
+    for m in "${ENABLED_MODELS[@]}"; do
+        # Suggest first different-provider model as polite default
+        default_num=$(_find_default_num "$m")  # the model itself
+        local suggestion=""
+        local _i=0 _mm
+        for _mm in "${ENABLED_MODELS[@]}"; do
+            _i=$((_i + 1))
+            if [[ "$_mm" != "$m" ]]; then
+                suggestion="$_mm"
+                break
+            fi
+        done
+        if [[ -n "$suggestion" ]]; then
+            prompt="  Fallback for ${m}"
+            read -rp "${prompt} (default: ${suggestion}): " fb
+            fb="${fb:-$suggestion}"
+        else
+            read -rp "  Fallback for ${m} (blank = none): " fb
+        fi
+
+        # Resolve numeric input to model name
+        if [[ "$fb" =~ ^[0-9]+$ ]]; then
+            local resolved
+            resolved=$(_model_num_to_name "$fb")
+            if [[ -n "$resolved" ]]; then
+                fb="$resolved"
+            fi
+        fi
+
+        if [[ -z "$fb" ]]; then
+            info "No fallback for ${m}"
+        elif _model_is_valid "$fb" && [[ "$fb" != "$m" ]]; then
+            FALLBACK_PAIRS="${FALLBACK_PAIRS} ${m}|${fb}"
+            ok "${m} → ${fb}"
+        elif [[ "$fb" == "$m" ]]; then
+            warn "A model cannot fallback to itself — no fallback for ${m}"
+        else
+            warn "'${fb}' is not available — no fallback for ${m}"
+        fi
+        echo ""
+    done
+}
+
 # ── Step 4: Write files ────────────────────────────────────────────────────
 
 write_env() {
@@ -500,6 +594,28 @@ MODEL
         fi
 
         echo "" >> litellm_config.yaml
+
+        # ── Fallback deployment (same model_name, different provider) ──
+        # If the primary API key fails, the Router auto-fallbacks to the
+        # order=2 deployment under the same model_name.
+        local fallback_m
+        fallback_m=$(get_fallback "$m")
+        if [[ -n "$fallback_m" ]] && _model_is_valid "$fallback_m"; then
+            local fb_backend
+            fb_backend=$(model_backend "$fallback_m")
+            local fb_env
+            fb_env=$(model_env "$fallback_m")
+            cat >> litellm_config.yaml <<MODEL
+  - model_name: ${m}
+    litellm_params:
+      model: ${fb_backend}
+MODEL
+            if [[ -n "$fb_env" ]]; then
+                echo "      api_key: \"os.environ/${fb_env}\"" >> litellm_config.yaml
+            fi
+            echo "      order: 2" >> litellm_config.yaml
+            echo "" >> litellm_config.yaml
+        fi
     done
 
     # ── Ragas Eval Model (requires Gemini for embeddings) ─────────
@@ -527,14 +643,42 @@ MODEL
   # Ragas Eval Model (LLM-as-judge — routes through LiteLLM)
   # The eval worker calls this with model="ragas-eval". The RagasLogger
   # callback skips logging for this model prefix, preventing an eval loop.
+
+  # Primary: user's chosen judge model
   - model_name: ragas-eval
     litellm_params:
       model: ${judge_backend}
+      order: 1
 YAML
         if [[ -n "$judge_env" ]]; then
             echo "      api_key: \"os.environ/${judge_env}\"" >> litellm_config.yaml
         fi
         echo "" >> litellm_config.yaml
+
+        # ── Ragas eval fallback deployment ──────────────────────────
+        # Auto-fallback to the other provider if primary judge fails.
+        local ragas_fb="" ragas_fb_backend="" ragas_fb_env=""
+        if [[ "$judge_env" == "DEEPSEEK_API_KEY" ]] && _gemini_is_configured; then
+            ragas_fb="gemini-flash"
+            ragas_fb_backend="gemini/gemini-2.5-flash"
+            ragas_fb_env="GEMINI_API_KEY"
+        elif [[ -n "$judge_env" && "$judge_env" != "DEEPSEEK_API_KEY" ]] && \
+             [[ " ${ENABLED_PROVIDERS[*]} " =~ " deepseek " ]]; then
+            ragas_fb="deepseek-flash"
+            ragas_fb_backend="deepseek/deepseek-v4-flash"
+            ragas_fb_env="DEEPSEEK_API_KEY"
+        fi
+        if [[ -n "$ragas_fb" ]]; then
+            cat >> litellm_config.yaml <<YAML
+  # Fallback: ${ragas_fb} (if primary judge times out)
+  - model_name: ragas-eval
+    litellm_params:
+      model: ${ragas_fb_backend}
+      api_key: "os.environ/${ragas_fb_env}"
+      order: 2
+
+YAML
+        fi
         ok "Ragas eval configured with judge model: ${judge_model}"
     else
         echo "# Ragas eval model skipped — no GEMINI_API_KEY configured" >> litellm_config.yaml
@@ -571,10 +715,44 @@ YAML
           complex_reasoning: 0.55
       complexity_router_default_model: ${TIER_SIMPLE}
 
+YAML
+
+    # ── LiteLLM settings (retries, cooldowns, timeouts) ──────────
+    cat >> litellm_config.yaml <<YAML
 litellm_settings:
   drop_params: true
   callbacks: ['proxy.callback.ragas_callback']
+  num_retries: 1                    # try each deployment once before falling back
+  request_timeout: 30               # fail per-attempt if no response in 30s
+  allowed_fails: 3                  # cooldown model after 3 failures in a minute
+  cooldown_time: 60                 # skip cooldowned model for 60 seconds
 
+YAML
+
+    # ── Router-level fallback chains (built from get_fallback pairs) ──
+    local _has_fb=false _m _fb
+    for _m in "${ENABLED_MODELS[@]}"; do
+        if _has_fallback "$_m"; then
+            _has_fb=true
+            break
+        fi
+    done
+    if $_has_fb; then
+        echo "router_settings:" >> litellm_config.yaml
+        echo "  # Cross-model fallbacks — reached only if ALL deployments" >> litellm_config.yaml
+        echo "  # under the primary model_name fail." >> litellm_config.yaml
+        echo "  fallbacks:" >> litellm_config.yaml
+        for _m in "${ENABLED_MODELS[@]}"; do
+            _fb=$(get_fallback "$_m")
+            if [[ -n "$_fb" ]] && _model_is_valid "$_fb"; then
+                echo "    - \"${_m}\": [\"${_fb}\"]" >> litellm_config.yaml
+            fi
+        done
+        echo "  routing_strategy: simple-shuffle" >> litellm_config.yaml
+        echo "" >> litellm_config.yaml
+    fi
+
+    cat >> litellm_config.yaml <<YAML
 general_settings:
   master_key: "os.environ/GATEWAY_MASTER_KEY"
 YAML
@@ -775,6 +953,7 @@ main() {
     select_providers
     collect_api_keys
     assign_tiers
+    assign_fallbacks
     write_env
     write_litellm_config
     start_compose

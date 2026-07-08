@@ -36,6 +36,7 @@ for name in (
     "proxy.skill_injector",
     "proxy.capture_original",
     "proxy.callback",
+    "proxy.fallback",
     "eval.redis_store",
 ):
     _setup_logger(name)
@@ -131,6 +132,10 @@ def _patched_compress(messages, model="claude-sonnet-4-5-20250929",
 # Patch the real module in sys.modules so the middleware's lazy
 # `from headroom.compress import compress` picks up our wrapper.
 sys.modules["headroom.compress"].compress = _patched_compress
+
+# ── Patch 2: LiteLLM Router fallback logging ────────────────────────────
+import proxy.fallback_logger as _fallback_logger
+_fallback_logger.apply_patches()
 
 # 1. Register Headroom ASGI middleware on the LiteLLM FastAPI app
 from litellm.proxy.proxy_server import app

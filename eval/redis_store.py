@@ -329,3 +329,113 @@ def _hydrate_headroom(raw: dict) -> dict:
         del raw["transforms_json"]
     # prompt_before and prompt_after are already strings — pass through
     return raw
+
+
+# ── Fallback event storage ──────────────────────────────────────────────────
+# Logs every time the LiteLLM Router serves a request from a non-primary
+# deployment (order > 1) due to failure/cooldown of the primary.
+#
+# Data layout:
+#   fallback:call:{call_id}   Hash  — Individual fallback event
+#   fallback:day:{date}       Hash  — Daily aggregate
+#   fallback:days             ZSet  — {day_str → timestamp} day index
+#   fallback:totals           Hash  — Grand totals
+
+FALLBACK_TTL = TTL_SECONDS
+FALLBACK_CALL_PREFIX = "fallback:call:"
+FALLBACK_DAY_PREFIX = "fallback:day:"
+FALLBACK_DAYS_KEY = "fallback:days"
+FALLBACK_TOTALS_KEY = "fallback:totals"
+
+
+def store_fallback_result(
+    call_id: str,
+    timestamp: str,
+    model_group: str,
+    deployment_model: str,
+    order: int,
+    fallback_type: str = "order",
+    original_exception: str | None = None,
+) -> None:
+    """Persist a single fallback event to Redis (fire-and-forget)."""
+    day_str = timestamp[:10]
+
+    # 1. Individual call record
+    mapping = {
+        "call_id": call_id,
+        "timestamp": timestamp,
+        "model_group": model_group,
+        "deployment_model": deployment_model,
+        "order": str(order),
+        "fallback_type": fallback_type,
+    }
+    if original_exception:
+        mapping["original_exception"] = original_exception[:200]
+    r.hset(f"{FALLBACK_CALL_PREFIX}{call_id}", mapping=mapping)
+    r.expire(f"{FALLBACK_CALL_PREFIX}{call_id}", FALLBACK_TTL)
+
+    # 2. Daily aggregate
+    r.hincrby(f"{FALLBACK_DAY_PREFIX}{day_str}", "call_count", 1)
+    r.expire(f"{FALLBACK_DAY_PREFIX}{day_str}", FALLBACK_TTL)
+
+    # 3. Days index
+    import time
+    from datetime import datetime, timezone
+    try:
+        day_ts = datetime.strptime(day_str, "%Y-%m-%d").replace(
+            tzinfo=timezone.utc,
+        ).timestamp()
+    except ValueError:
+        day_ts = time.time()
+    r.zadd(FALLBACK_DAYS_KEY, {day_str: day_ts})
+
+    # 4. Running totals
+    r.hincrby(FALLBACK_TOTALS_KEY, "total_calls", 1)
+
+
+def get_daily_fallback_stats(n_days: int = 10) -> list[dict]:
+    """Return the latest *n_days* of daily fallback aggregates (descending)."""
+    days = r.zrevrange(FALLBACK_DAYS_KEY, 0, n_days - 1)
+    results: list[dict] = []
+    for day_str in days:
+        raw = r.hgetall(f"{FALLBACK_DAY_PREFIX}{day_str}")
+        if not raw:
+            continue
+        results.append({
+            "date": day_str,
+            "call_count": int(raw.get("call_count", 0)),
+        })
+    return results
+
+
+def get_total_fallback_stats() -> dict:
+    """Return running grand totals for all fallback events."""
+    raw = r.hgetall(FALLBACK_TOTALS_KEY)
+    if not raw:
+        return {"total_calls": 0}
+    return {
+        "total_calls": int(raw.get("total_calls", 0)),
+    }
+
+
+def get_day_fallback_calls(date_str: str) -> list[dict]:
+    """Return individual fallback events for a specific date."""
+    calls: list[dict] = []
+    cursor = 0
+    prefix = f"{FALLBACK_CALL_PREFIX}*"
+    while True:
+        cursor, keys = r.scan(cursor=cursor, match=prefix, count=500)
+        for key in keys:
+            raw = r.hgetall(key)
+            if not raw:
+                continue
+            ts = raw.get("timestamp", "")
+            if not ts.startswith(date_str):
+                continue
+            if "order" in raw:
+                raw["order"] = int(raw["order"])
+            calls.append(raw)
+        if cursor == 0:
+            break
+    calls.sort(key=lambda c: c.get("timestamp", ""), reverse=True)
+    return calls

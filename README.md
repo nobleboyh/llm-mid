@@ -294,6 +294,52 @@ Token thresholds are tuned for Claude Code's ~500+ token system prompt: `simple`
 
 ---
 
+## Auto-Fallback & Reliability
+
+GateMid uses **LiteLLM's built-in fallback mechanism** to handle provider API failures. If your Gemini API key dies, requests auto-fallback to DeepSeek with zero config changes and minimal latency impact.
+
+### Multi-Deployment Fallback (per model_name)
+
+Each Gemini model has a matching DeepSeek deployment registered under the **same `model_name`** with an `order` priority:
+
+```
+model_name: gemini-flash
+  ├── order: 1  → gemini/gemini-2.5-flash   (primary — tried first)
+  └── order: 2  → deepseek/deepseek-v4-flash (auto-fallback if order=1 fails)
+```
+
+When `gemini-flash` is called (e.g. from the complexity router), LiteLLM tries `order=1` first, and if it fails (dead key, 401, 429, timeout), **automatically** tries `order=2` without the client ever seeing an error.
+
+### Retry & Cooldown
+
+| Setting | Value | Effect |
+|---------|-------|--------|
+| `num_retries` | 1 | One retry per deployment before trying the next order |
+| `request_timeout` | 30s | Fails slow deployments quickly |
+| `allowed_fails` | 3/min | Cooldown threshold — quiet a failing model |
+| `cooldown_time` | 60s | How long to skip a model after it passes the threshold |
+
+After **3 failures in a minute**, the model enters a 60-second cooldown — requests skip it entirely, saving retry latency. This prevents hammering a dead API key.
+
+### Cross-Model Fallback Chain
+
+If **both** deployments under a model_name fail (e.g. both Gemini and DeepSeek keys dead), a `router_settings.fallbacks` chain catches the final fallback:
+
+```yaml
+router_settings:
+  fallbacks:
+    - "gemini-flash": ["deepseek-flash"]
+    - "gemini-pro": ["deepseek-pro"]
+```
+
+This is a last resort — in normal operation, the `order: 1/2` multi-deployment handles failures transparently.
+
+### Quick-Start Impact
+
+When you run `quick-setup.sh`, it detects if both Gemini and DeepSeek are enabled and automatically generates the fallback deployments and reliability settings. No manual config editing needed.
+
+---
+
 ## Scoring & Evaluation
 
 Every LLM response is scored asynchronously for quality using Ragas. The eval-worker runs in a separate container so scoring never impacts request latency.
@@ -402,6 +448,38 @@ docker exec -it gatemid-headroom python -m eval.cli headroom --days 14
 **Daily detail view** shows every compression call for that day: timestamp, model, tokens before/after/saved, compression ratio, and which transforms were applied (SmartCrusher, CodeCompressor, CacheAligner).
 
 > **Note:** Requires `-it` (interactive TTY) for TUI rendering. Uses [Rich](https://github.com/Textualize/rich) for terminal rendering (already installed in both containers).
+
+---
+
+### Interactive fallback events board
+
+Every time the Router serves a request from a **non-primary deployment** (e.g. Gemini down → DeepSeek order=2), the event is logged to Redis with model group, served-by model, fallback type, and original exception. The interactive board shows daily and per-event breakdowns.
+
+```bash
+# Show last 10 days of fallback events
+docker exec -it gatemid-headroom python -m eval.cli fallback
+
+# Show more days
+docker exec -it gatemid-headroom python -m eval.cli fallback --days 14
+```
+
+**Control reference:**
+
+| Key | Action |
+|---|---|
+| `↑` / `↓` | Scroll through daily stats / events |
+| `←` / `→` | Page through events within a day |
+| `Enter` / `Space` | Drill into per-event details for the selected day |
+| `q` / `Esc` | Go back from detail view / return to days |
+| `Ctrl+C` | Quit |
+
+**Top bar** shows the total number of fallback events across all time.
+
+**Daily detail view** shows every fallback event for that day: timestamp, fallback type (`Order #2` for multi-deployment, `X-Model` for cross-model router fallback), the original model group, and which deployment served the request instead.
+
+Press `Enter` on any event to see the full detail view, including the original exception string that triggered the fallback (e.g. `401` auth failure, timeout).
+
+> **Note:** Requires `-it` (interactive TTY) for TUI rendering.
 
 **Redis data layout (compression):**
 
@@ -537,9 +615,10 @@ Three headroom patches are applied at startup in `proxy/entrypoint.py`:
 | **Eval** | `eval/worker_main.py` | Eval-worker entrypoint — configures judge LLM + embeddings |
 | **Eval** | `eval/redis_store.py` | Redis data layer — queue management, scored records, leaderboards |
 | **Eval** | `eval/score_view.py` | CLI for querying best/worst scoring calls |
-| **Eval** | `eval/cli.py` | Centralized CLI — `python -m eval.cli {score|headroom|clear-redis}` |
+| **Eval** | `eval/cli.py` | Centralized CLI — `python -m eval.cli {score|headroom|fallback|clear-redis}` |
 | **Eval** | `eval/score_view_interactive.py` | Interactive TUI score board (invoked via `eval.cli score`) |
 | **Eval** | `eval/headroom_view_interactive.py` | Interactive TUI headroom stats (invoked via `eval.cli headroom`) |
+| **Eval** | `eval/fallback_view_interactive.py` | Interactive TUI fallback events board (invoked via `eval.cli fallback`) |
 | **Eval** | `eval/clear_redis.py` | CLI for clearing eval data (invoked via `eval.cli clear-redis`) |
 | **Eval** | `eval/gemini_embeddings.py` | Lightweight Gemini embeddings (httpx, no PyTorch) |
 | **Infra** | `docker-compose.yml` | Three services: proxy, redis, eval-worker |

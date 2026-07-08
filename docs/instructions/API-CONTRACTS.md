@@ -123,6 +123,19 @@ The `team-smart-router` model alias triggers LiteLLM's `ComplexityRouter`. It an
 
 Token thresholds: simple ≤ 100 tokens, complex ≥ 2000 tokens.
 
+### Auto-fallback on provider failure
+
+Each Gemini model (`gemini-flash`, `gemini-pro`) is registered with two **ordered deployments** under the same model_name. If the Gemini API key is dead or rate-limited, the router automatically falls back to the DeepSeek counterpart:
+
+| model_name | order=1 (primary) | order=2 (fallback) |
+|------------|-------------------|-------------------|
+| `gemini-flash` | `gemini/gemini-2.5-flash` | `deepseek/deepseek-v4-flash` |
+| `gemini-pro` | `gemini/gemini-2.5-pro` | `deepseek/deepseek-v4-pro` |
+
+The `router_settings.fallbacks` chain provides a final safety net — if all deployments under a model_name fail, the request routes to the pure DeepSeek model group (e.g. `gemini-flash` → `deepseek-flash`).
+
+See [README — Auto-Fallback & Reliability](../../README.md#auto-fallback--reliability) for full settings.
+
 ### Bypassing the router
 
 Set `ANTHROPIC_MODEL=deepseek-pro` (or any concrete model alias) to skip routing.

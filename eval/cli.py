@@ -16,6 +16,7 @@ HELP = __doc__
 COMMANDS = {
     "score": "eval.score_view_interactive",
     "headroom": "eval.headroom_view_interactive",
+    "fallback": "eval.fallback_view_interactive",
     "clear-redis": "eval.clear_redis",
 }
 
@@ -38,6 +39,8 @@ def main() -> None:
         from eval.score_view_interactive import main as fn
     elif cmd == "headroom":
         from eval.headroom_view_interactive import main as fn
+    elif cmd == "fallback":
+        from eval.fallback_view_interactive import main as fn
     else:  # clear-redis
         from eval.clear_redis import main as fn
 
