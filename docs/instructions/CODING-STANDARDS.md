@@ -1,16 +1,5 @@
 # Coding Standards — GateMid
 
-## Philosophy
-
-This project follows **Ponytail principles** (see `proxy/skills/ponytail.md`):
-- Shortest working diff wins
-- No unrequested abstractions
-- Deletion over addition
-- Boring over clever
-- Fewest files possible
-
-Code is written to be read, not admired. Patterns that appear repeatedly are deliberate; one-off code doesn't get generalized until the third use.
-
 ## Python conventions
 
 ### Language level
