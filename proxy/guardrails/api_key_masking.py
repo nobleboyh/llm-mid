@@ -26,8 +26,8 @@ logger = logging.getLogger(__name__)
 # ORDER MATTERS — most specific patterns first; generic catch-alls last.
 # Each entry: (name, compiled_pattern)
 _PATTERNS: list[tuple[str, re.Pattern]] = [
-    # Gemini: AIzaSy... (27+ chars)
-    ("gemini_key", re.compile(r"\b(AIzaSy[A-Za-z0-9_-]{26,})\b")),
+    # Gemini: AIzaSy... (27+ chars) or AQ.xxx (newer format, 35+ chars)
+    ("gemini_key", re.compile(r"\b(AIzaSy[A-Za-z0-9_-]{26,}|AQ\.[A-Za-z0-9_-]{30,})\b")),
     # Hugging Face: hf_...
     ("huggingface_token", re.compile(r"\b(hf_[A-Za-z0-9_-]{20,})\b")),
     # GitHub: ghp_..., ghs_..., gho_...
@@ -38,6 +38,11 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
     ("openai_key", re.compile(r"\b(sk-[a-zA-Z0-9_-]{20,})\b")),
     # Bearer token inline in text — must come BEFORE openai_key so the full
     # ``Bearer sk-proj-...`` value is captured in one go.
+    # ponytail: actually placed AFTER openai_key in the list. Unmasked Bearer
+    # tokens without an sk- prefix still match bearer_token correctly. The
+    # re-order would only change which key_type is logged in events, not the
+    # masking outcome — ``sk-`` inside a Bearer token is still masked by
+    # openai_key. Re-order only if log-parsing depends on bearer_token events.
     ("bearer_token", re.compile(
         r"""\b(Bearer\s+[A-Za-z0-9._\-\/+=]{20,})\b""",
         re.IGNORECASE,
@@ -52,7 +57,7 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
 ]
 
 
-def _mask_single_value(key_type: str, full_match: str, value: str) -> str:
+def _mask_single_value(key_type: str, full_match: str) -> str:
     """Replace the matched sensitive part with a masked placeholder.
 
     Architecture:
@@ -66,7 +71,7 @@ def _mask_single_value(key_type: str, full_match: str, value: str) -> str:
     if full_match.lower().startswith("bearer "):
         m = re.match(r"^Bearer\s+(.+)", full_match, re.IGNORECASE)
         if m:
-            inner = _mask_single_value("", m.group(1), value)
+            inner = _mask_single_value("", m.group(1))
             return f"Bearer {inner}"
         return "Bearer ***MASKED***"
 
@@ -82,7 +87,7 @@ def _mask_single_value(key_type: str, full_match: str, value: str) -> str:
         return prefix + "***MASKED***"
 
     # Tokens with a known type prefix (no ``-`` separator)
-    known_prefixes = ["AIzaSy", "AKIA", "hf_", "ghp_", "ghs_", "gho_"]
+    known_prefixes = ["AIzaSy", "AQ.", "AKIA", "hf_", "ghp_", "ghs_", "gho_"]
     for prefix in known_prefixes:
         if full_match.startswith(prefix):
             return prefix + "***MASKED***"
@@ -118,7 +123,7 @@ def mask_api_keys_in_text(text: str) -> tuple[str, list[dict[str, Any]]]:
 
         # Replace — use a lambda that captures ``key_type`` to build the mask
         def _replacer(m: re.Match, kt: str = key_type) -> str:
-            return _mask_single_value(kt, m.group(1), m.string)
+            return _mask_single_value(kt, m.group(1))
 
         result = pattern.sub(_replacer, result)
 
@@ -184,7 +189,7 @@ def mask_api_keys_in_request(body: dict) -> tuple[dict, list[dict[str, Any]]]:
     if isinstance(body.get("system"), str):
         body["system"] = _walk_text(body["system"], "$.system")
 
-    # ── messages[].content ────────────────────────────────────────────────
+    # ── messages[].content (string or list of content blocks) ─────────────
     messages = body.get("messages", [])
     if isinstance(messages, list):
         for i, msg in enumerate(messages):
@@ -197,7 +202,10 @@ def mask_api_keys_in_request(body: dict) -> tuple[dict, list[dict[str, Any]]]:
                 )
             elif isinstance(content, list):
                 for j, block in enumerate(content):
-                    if isinstance(block, dict) and block.get("type") == "text":
+                    if not isinstance(block, dict):
+                        continue
+                    block_type = block.get("type", "")
+                    if block_type == "text":
                         text = block.get("text", "")
                         if isinstance(text, str):
                             content[j] = {
@@ -206,6 +214,29 @@ def mask_api_keys_in_request(body: dict) -> tuple[dict, list[dict[str, Any]]]:
                                     text, f"$.messages[{i}].content[{j}].text"
                                 ),
                             }
+                    elif block_type == "tool_result":
+                        # tool_result blocks carry file-read content — scan them
+                        tr_content = block.get("content")
+                        if isinstance(tr_content, str):
+                            content[j] = {
+                                **block,
+                                "content": _walk_text(
+                                    tr_content,
+                                    f"$.messages[{i}].content[{j}].content",
+                                ),
+                            }
+                        elif isinstance(tr_content, list):
+                            for k, tb in enumerate(tr_content):
+                                if isinstance(tb, dict) and tb.get("type") == "text":
+                                    text = tb.get("text", "")
+                                    if isinstance(text, str):
+                                        tr_content[k] = {
+                                            **tb,
+                                            "text": _walk_text(
+                                                text,
+                                                f"$.messages[{i}].content[{j}].content[{k}].text",
+                                            ),
+                                        }
 
     # ── user content at top level (Anthropic /v1/messages) ─────────────────
     if isinstance(body.get("content"), str):
@@ -243,6 +274,12 @@ def mask_api_keys_in_response(body: dict) -> tuple[dict, list[dict[str, Any]]]:
                 if isinstance(c, str):
                     choices[i]["message"]["content"] = _walk_text(
                         c, f"$.choices[{i}].message.content"
+                    )
+                # DeepSeek models put reasoning in reasoning_content
+                rc = msg.get("reasoning_content")
+                if isinstance(rc, str):
+                    choices[i]["message"]["reasoning_content"] = _walk_text(
+                        rc, f"$.choices[{i}].message.reasoning_content"
                     )
             delta = choice.get("delta")
             if isinstance(delta, dict):

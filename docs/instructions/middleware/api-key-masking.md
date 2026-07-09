@@ -61,7 +61,12 @@ Only content-bearing fields are scanned:
 - `$.messages[*].content` (string or list-of-blocks)
 - `$.content` (Anthropic top-level user content)
 
-Fields NOT scanned: `tools`, `metadata`, `stop_sequences`, `temperature`, etc. — these don't carry user content that could leak keys.
+Within content-block lists, both `text` and `tool_result` blocks are scanned.
+`tool_result` blocks carry file-read results and their `content` field (string
+or nested text-blocks list) is recursively masked.
+
+Fields NOT scanned: `tools`, `metadata`, `stop_sequences`, `temperature`,
+`image` blocks, etc. — these don't carry user content that could leak keys.
 
 ### Response bodies
 Only content-bearing fields:
