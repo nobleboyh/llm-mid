@@ -220,9 +220,9 @@ select_providers() {
     header "Provider Selection"
 
     echo "  Choose which LLM providers to enable."
-    echo "  Type the number to toggle a provider on/off, then press Enter when done."
-    echo "  ${YELLOW}Note:${RESET} Gemini (Google) is required for Ragas eval scoring —"
-    echo "  if you skip it or leave the API key blank, eval will be disabled."
+    echo -e "  Type the number to toggle a provider on/off, then press Enter when done."
+    echo -e "  ${YELLOW}Note:${RESET} Gemini (Google) is required for Ragas eval scoring —"
+    echo -e "  if you skip it or leave the API key blank, eval will be disabled."
     echo ""
 
     # Use space-separated string instead of bash array (bash 3.2 compat)
