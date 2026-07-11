@@ -211,7 +211,7 @@ def eval_worker(once: bool = False, llm=None, embeddings=None):
             continue
 
         call_id = record.get("call_id", "unknown")
-        logger.info("Scoring call %s (model=%s, category=%s)",
+        logger.info("Scoring call %s (original_model=%s, category=%s)",
                      call_id, record.get("model"), record.get("request_category"))
 
         try:
