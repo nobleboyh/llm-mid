@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Productivity &times; Token — Hackathon Pitch v5</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Roboto:wght@300;400;500&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --blue:#1A73E8;--blue-d:#1557B0;--blue-l:#E8F0FE;
+    --green:#34A853;--green-l:#E6F4EA;
+    --amber:#F9AB00;--amber-l:#FEF7E0;
+    --red:#EA4335;--red-l:#FCE8E6;
+    --purple:#9334E6;--purple-l:#F3E8FD;
+    --ink:#202124;--ink2:#3C4043;--muted:#5F6368;--border:#DADCE0;--surface:#F8F9FA;--white:#fff;
+  }
+  html,body{height:100%}
+  body{font-family:'Roboto',sans-serif;background:#E8EAED;overflow:hidden}
+
+  /* ── Deck shell: stage + nav stacked, never overlapping ───────── */
+  .deck{width:100vw;height:100vh;display:flex;flex-direction:column;background:#fff}
+  .stage{flex:1;position:relative;min-height:0}
+  .slide{position:absolute;inset:0;background:var(--white);display:none;flex-direction:column}
+  .slide.active{display:flex}
+
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:0 44px;height:50px;border-bottom:1px solid var(--border);flex-shrink:0}
+  .topbar-left{display:flex;align-items:center;gap:12px}
+  .topbar-logo{display:flex;gap:4px}
+  .topbar-logo span{width:9px;height:9px;border-radius:50%;display:inline-block}
+  .topbar-title{font-family:'Google Sans',sans-serif;font-size:12.5px;font-weight:500;color:var(--muted)}
+  .topbar-track{font-size:10.5px;font-weight:500;letter-spacing:.8px;text-transform:uppercase;padding:3px 10px;border-radius:12px;background:var(--green-l);color:var(--green)}
+  .topbar-counter{font-family:'Roboto Mono',monospace;font-size:11.5px;color:var(--muted)}
+
+  .nav{flex-shrink:0;height:58px;background:var(--white);border-top:1px solid var(--border);display:flex;align-items:center;justify-content:center;gap:16px}
+  .nav-btn{display:flex;align-items:center;gap:8px;padding:7px 22px;border-radius:24px;border:1px solid var(--border);background:var(--white);color:var(--blue);font-family:'Google Sans',sans-serif;font-size:13.5px;font-weight:500;cursor:pointer}
+  .nav-btn:hover{background:var(--blue-l)}
+  .nav-btn:disabled{color:var(--border);pointer-events:none}
+  .nav-btn.primary{background:var(--blue);color:var(--white);border-color:var(--blue)}
+  .nav-btn.primary:hover{background:var(--blue-d)}
+  .nav-dots{display:flex;gap:6px;align-items:center}
+  .nav-dot{width:6px;height:6px;border-radius:50%;background:var(--border);cursor:pointer}
+  .nav-dot.active{background:var(--blue);width:18px;border-radius:3px}
+
+  /* ── Body: exactly fills remaining space, never clips into nav ── */
+  .body{flex:1;min-height:0;display:flex;flex-direction:column;padding:34px 60px 26px}
+
+  .eyebrow{font-family:'Roboto Mono',monospace;font-size:11px;font-weight:500;letter-spacing:1.4px;text-transform:uppercase;color:var(--blue);margin-bottom:8px;flex-shrink:0}
+  .eyebrow.green{color:var(--green)}
+  .eyebrow.red{color:var(--red)}
+  .eyebrow.purple{color:var(--purple)}
+  .headline{font-family:'Google Sans',sans-serif;font-size:38px;font-weight:700;color:var(--ink);line-height:1.08;flex-shrink:0}
+  .headline.xl{font-size:52px}
+  .subhead{font-size:14px;color:var(--muted);margin-top:6px;flex-shrink:0;max-width:640px}
+
+  .stage-row{flex:1;display:flex;align-items:stretch;gap:0;margin-top:14px;min-height:0}
+  .graphic{flex:1.05;display:flex;align-items:center;justify-content:center;min-width:0;min-height:0}
+  .graphic svg{width:100%;height:100%;max-height:100%}
+  .side{flex:.95;display:flex;flex-direction:column;justify-content:center;gap:16px;padding-left:28px;min-height:0}
+
+  .big-stat{display:flex;align-items:baseline;gap:12px}
+  .big-stat .num{font-family:'Google Sans',sans-serif;font-size:52px;font-weight:700;line-height:1}
+  .big-stat .lbl{font-size:13px;color:var(--muted);max-width:210px;line-height:1.35}
+  .pillrow{display:flex;flex-wrap:wrap;gap:8px}
+  .pill{font-family:'Google Sans',sans-serif;font-size:11.5px;font-weight:500;padding:6px 13px;border-radius:15px;background:var(--surface);border:1px solid var(--border);color:var(--ink2)}
+  .pill.on{background:var(--blue-l);border-color:#c5d8fc;color:var(--blue)}
+  .divider-thin{height:1px;background:var(--border)}
+  .microcopy{font-size:13px;color:var(--ink2);line-height:1.5;max-width:320px}
+
+  .split{display:flex;flex:1;gap:0;margin-top:12px;min-height:0}
+  .split-half{flex:1;display:flex;flex-direction:column;justify-content:center;padding:16px 30px;position:relative;min-height:0}
+  .split-seam{width:1px;background:var(--border);margin:16px 0}
+  .icon-circle{width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-bottom:12px;flex-shrink:0}
+  .half-title{font-family:'Google Sans',sans-serif;font-size:19px;font-weight:700;color:var(--ink);margin-bottom:6px}
+  .half-num{font-family:'Google Sans',sans-serif;font-size:40px;font-weight:700;line-height:1;margin-bottom:6px}
+  .half-line{font-size:12.5px;color:var(--muted);line-height:1.45;max-width:320px}
+
+  .rail{display:flex;flex-direction:column;gap:0}
+  .rail-node{display:flex;align-items:center;gap:14px}
+  .rail-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0}
+  .rail-bar{width:2px;height:20px;background:var(--border);margin-left:5px}
+  .rail-label{font-family:'Google Sans',sans-serif;font-size:14px;font-weight:600;color:var(--ink)}
+  .rail-sub{font-size:11px;color:var(--muted)}
+
+  .chiprow{display:flex;flex-wrap:wrap;gap:7px}
+  .chip{display:inline-flex;align-items:center;height:24px;padding:0 11px;border-radius:12px;font-size:11px;font-weight:500}
+  .chip.blue{background:var(--blue-l);color:var(--blue)}
+  .chip.green{background:var(--green-l);color:var(--green)}
+  .chip.amber{background:var(--amber-l);color:#c26d00}
+  .chip.red{background:var(--red-l);color:var(--red)}
+  .chip.purple{background:var(--purple-l);color:var(--purple)}
+  .chip.gray{background:var(--surface);color:var(--muted);border:1px solid var(--border)}
+
+  code{font-family:'Roboto Mono',monospace;font-size:11px;background:var(--surface);padding:1px 5px;border-radius:4px;color:var(--blue-d)}
+
+  .s1-hero{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+  .s1-badge{display:inline-flex;align-items:center;gap:8px;padding:6px 16px;border-radius:20px;background:var(--blue-l);color:var(--blue);font-size:12px;font-weight:500;letter-spacing:.5px;margin-bottom:26px}
+  .s1-title{font-family:'Google Sans',sans-serif;font-size:clamp(48px,7vw,80px);font-weight:700;color:var(--ink);line-height:1.05;margin-bottom:18px}
+  .s1-title .x{color:var(--blue)}
+  .s1-sub{font-size:19px;color:var(--muted);font-weight:300;max-width:540px;line-height:1.5;margin-bottom:36px}
+  .s1-pills{display:flex;gap:12px;justify-content:center}
+  .s1-pill{padding:8px 20px;border-radius:20px;border:1.5px solid var(--border);font-family:'Google Sans',sans-serif;font-size:14px;font-weight:500;color:var(--ink2)}
+</style>
+</head>
+<body>
+<div class="deck" id="deck">
+<div class="stage">
+
+<!-- ═══ 1 — Title ═══ -->
+<div class="slide active" data-track="">
+  <div class="topbar">
+    <div class="topbar-left"><div class="topbar-logo"><span style="background:#1A73E8"></span><span style="background:#34A853"></span><span style="background:#F9AB00"></span><span style="background:#EA4335"></span></div><span class="topbar-title">AI4PM Contest 2026</span></div>
+    <span class="topbar-counter">1 / 12</span>
+  </div>
+  <div class="body" style="justify-content:center">
+    <div class="s1-hero">
+      <div class="s1-badge">AI4PM Contest — Developer Productivity</div>
+      <div class="s1-title">Productivity <span class="x">&times;</span> Token</div>
+      <div class="s1-sub">Two tools. One goal — ship faster, spend less on every LLM call.</div>
+      <div class="s1-pills"><div class="s1-pill">Human Layer</div><div class="s1-pill" style="border-color:var(--blue);color:var(--blue)">+</div><div class="s1-pill">Non-Human Layer</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 2 — Two-Layer Idea ═══ -->
+<div class="slide" data-track="">
+  <div class="topbar">
+    <div class="topbar-left"><div class="topbar-logo"><span style="background:#1A73E8"></span><span style="background:#34A853"></span><span style="background:#F9AB00"></span><span style="background:#EA4335"></span></div><span class="topbar-title">Our Approach</span></div>
+    <span class="topbar-counter">2 / 12</span>
+  </div>
+  <div class="body">
+    <div class="eyebrow">The two-layer solution</div>
+    <div class="headline xl">Productivity, from both directions</div>
+    <div class="split">
+      <div class="split-half" style="background:var(--green-l);border-radius:18px;margin-right:8px">
+        <div class="icon-circle" style="background:var(--white)"><svg width="26" height="26" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="6" r="2.5" stroke="#34A853" stroke-width="1.8"/><circle cx="6" cy="16" r="2.5" stroke="#34A853" stroke-width="1.8"/><circle cx="18" cy="16" r="2.5" stroke="#34A853" stroke-width="1.8"/><path d="M10.5 7.5L7.5 14M13.5 7.5L16.5 14M8.5 16h7" stroke="#34A853" stroke-width="1.6"/></svg></div>
+        <div style="font-family:'Roboto Mono',monospace;font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--green);margin-bottom:6px">Human Layer</div>
+        <div class="half-title">Understand-Anything</div>
+        <div class="half-line">Knowledge graph of any codebase, in your editor.</div>
+        <div class="big-stat" style="margin-top:16px"><div class="num" style="color:var(--green);font-size:36px">50%</div><div class="lbl">faster comprehension</div></div>
+        <div class="chiprow" style="margin-top:14px"><span class="chip green">Knowledge Graph</span><span class="chip green">VS Code</span></div>
+      </div>
+      <div class="split-half" style="background:var(--blue-l);border-radius:18px;margin-left:8px">
+        <div class="icon-circle" style="background:var(--white)"><svg width="26" height="26" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="4" stroke="#1A73E8" stroke-width="1.8"/><path d="M8 12h8M8 8h5M8 16h4" stroke="#1A73E8" stroke-width="1.8" stroke-linecap="round"/></svg></div>
+        <div style="font-family:'Roboto Mono',monospace;font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--blue);margin-bottom:6px">Non-Human Layer</div>
+        <div class="half-title">GateMid Proxy</div>
+        <div class="half-line">One gateway: routing, compression, guardrails, scoring.</div>
+        <div class="big-stat" style="margin-top:16px"><div class="num" style="color:var(--blue);font-size:36px">60–95%</div><div class="lbl">fewer tokens per call</div></div>
+        <div class="chiprow" style="margin-top:14px"><span class="chip blue">LiteLLM</span><span class="chip blue">Headroom</span><span class="chip blue">Ragas</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 3 — Understand-Anything ═══ -->
+<div class="slide" data-track="Human Layer">
+  <div class="topbar">
+    <div class="topbar-left"><div class="topbar-logo"><span style="background:#1A73E8"></span><span style="background:#34A853"></span><span style="background:#F9AB00"></span><span style="background:#EA4335"></span></div><span class="topbar-title">Part 1 — Human Layer</span></div>
+    <span class="topbar-counter">3 / 12</span>
+  </div>
+  <div class="body">
+    <div class="eyebrow green">Understand-Anything</div>
+    <div class="headline">See the codebase before you touch it</div>
+    <div class="stage-row">
+      <div class="graphic">
+        <svg viewBox="0 0 440 360" preserveAspectRatio="xMidYMid meet">
+          <line x1="220" y1="180" x2="110" y2="80"  stroke="#DADCE0" stroke-width="2"/>
+          <line x1="220" y1="180" x2="330" y2="70"  stroke="#DADCE0" stroke-width="2"/>
+          <line x1="220" y1="180" x2="90"  y2="260" stroke="#DADCE0" stroke-width="2"/>
+          <line x1="220" y1="180" x2="340" y2="270" stroke="#DADCE0" stroke-width="2"/>
+          <line x1="220" y1="180" x2="220" y2="300" stroke="#DADCE0" stroke-width="2"/>
+          <circle cx="110" cy="80"  r="26" fill="#E8F0FE" stroke="#1A73E8" stroke-width="2"/><text x="110" y="85" text-anchor="middle" font-size="11" font-weight="600" fill="#1A73E8" font-family="Google Sans">Class</text>
+          <circle cx="330" cy="70" r="26" fill="#E6F4EA" stroke="#34A853" stroke-width="2"/><text x="330" y="75" text-anchor="middle" font-size="11" font-weight="600" fill="#34A853" font-family="Google Sans">Service</text>
+          <circle cx="90" cy="260" r="26" fill="#FEF7E0" stroke="#F9AB00" stroke-width="2"/><text x="90" y="265" text-anchor="middle" font-size="10.5" font-weight="600" fill="#C26D00" font-family="Google Sans">Endpoint</text>
+          <circle cx="340" cy="270" r="26" fill="#F3E8FD" stroke="#9334E6" stroke-width="2"/><text x="340" y="275" text-anchor="middle" font-size="10.5" font-weight="600" fill="#9334E6" font-family="Google Sans">Repo</text>
+          <circle cx="220" cy="300" r="22" fill="#FCE8E6" stroke="#EA4335" stroke-width="2"/><text x="220" y="304" text-anchor="middle" font-size="10" font-weight="600" fill="#EA4335" font-family="Google Sans">Table</text>
+          <circle cx="220" cy="180" r="44" fill="#1A73E8"/><text x="220" y="176" text-anchor="middle" font-size="12" font-weight="700" fill="white" font-family="Google Sans">Your</text><text x="220" y="192" text-anchor="middle" font-size="12" font-weight="700" fill="white" font-family="Google Sans">Codebase</text>
+        </svg>
+      </div>
+      <div class="side">
+        <div class="big-stat"><div class="num" style="color:var(--blue)">1&times;</div><div class="lbl">click in VS Code — dashboard opens in-editor</div></div>
+        <div class="divider-thin"></div>
+        <div class="big-stat"><div class="num" style="color:var(--green)">50%</div><div class="lbl">faster codebase comprehension, same accuracy</div></div>
+        <div class="divider-thin"></div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink2)"><span style="width:6px;height:6px;border-radius:50%;background:var(--blue)"></span>Navigate dependencies visually</div>
+          <div style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink2)"><span style="width:6px;height:6px;border-radius:50%;background:var(--blue)"></span>Find owners &amp; trace call chains</div>
+          <div style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink2)"><span style="width:6px;height:6px;border-radius:50%;background:var(--blue)"></span>Agents cite the graph, not guesses</div>
+        </div>
+        <div class="pillrow"><span class="pill">Java · Python · TS</span><span class="pill">VS Code</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 4 — Human Evidence: Comprehension ═══ -->
+<div class="slide" data-track="Human Layer">
+  <div class="topbar">
+    <div class="topbar-left"><div class="topbar-logo"><span style="background:#1A73E8"></span><span style="background:#34A853"></span><span style="background:#F9AB00"></span><span style="background:#EA4335"></span></div><span class="topbar-title">Part 1 — Human Evidence</span></div>
+    <span class="topbar-counter">4 / 12</span>
+  </div>
+  <div class="body">
+    <div class="eyebrow green">Evidence — Comprehension Test</div>
+    <div class="headline">Same devs. Same project. Half the time.</div>
+    <div class="stage-row">
+      <div class="graphic">
+        <svg viewBox="0 0 320 300" preserveAspectRatio="xMidYMid meet">
+          <rect x="60" y="70" width="90" height="190" rx="8" fill="#DADCE0"/>
+          <text x="105" y="60" text-anchor="middle" font-size="16" font-weight="700" fill="#5F6368" font-family="Google Sans">100%</text>
+          <text x="105" y="278" text-anchor="middle" font-size="13" fill="#5F6368" font-family="Google Sans">Without graph</text>
+          <rect x="190" y="165" width="90" height="95" rx="8" fill="#34A853"/>
+          <text x="235" y="155" text-anchor="middle" font-size="16" font-weight="700" fill="#34A853" font-family="Google Sans">50%</text>
+          <text x="235" y="278" text-anchor="middle" font-size="13" fill="#5F6368" font-family="Google Sans">With graph</text>
+          <line x1="40" y1="260" x2="300" y2="260" stroke="#DADCE0" stroke-width="1"/>
+        </svg>
+      </div>
+      <div class="side">
+        <div class="big-stat"><div class="num" style="color:var(--green)">50%</div><div class="lbl">less time to complete the same comprehension test</div></div>
+        <div class="divider-thin"></div>
+        <div class="big-stat"><div class="num" style="color:var(--blue)">=</div><div class="lbl">accuracy — the speed didn't cost correctness</div></div>
+        <div class="divider-thin"></div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink2)"><span style="width:6px;height:6px;border-radius:50%;background:var(--green)"></span>Equal skill level, both groups</div>
+          <div style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink2)"><span style="width:6px;height:6px;border-radius:50%;background:var(--green)"></span>Zero prior project knowledge</div>
+          <div style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink2)"><span style="width:6px;height:6px;border-radius:50%;background:var(--green)"></span>Identical questions for both groups</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 5 — Human Evidence: Ragas ═══ -->
+<div class="slide" data-track="Human Layer">
+  <div class="topbar">
+    <div class="topbar-left"><div class="topbar-logo"><span style="background:#1A73E8"></span><span style="background:#34A853"></span><span style="background:#F9AB00"></span><span style="background:#EA4335"></span></div><span class="topbar-title">Part 1 — AI Agent Evidence</span></div>
+    <span class="topbar-counter">5 / 12</span>
+  </div>
+  <div class="body">
+    <div class="eyebrow green">Evidence — Ragas Quality Scoring</div>
+    <div class="headline" style="font-size:30px;margin-bottom:2px">The graph makes AI agents smarter too</div>
+    <div style="display:flex;gap:12px;margin:12px 0">
+      <div style="background:var(--red-l);border-radius:10px;padding:10px 20px;text-align:center;flex:1"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Without KG</div><div style="font-family:'Google Sans',sans-serif;font-size:24px;font-weight:700;color:var(--red)">46.4%</div></div>
+      <div style="background:var(--blue-l);border-radius:10px;padding:10px 20px;text-align:center;flex:1"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Improvement</div><div style="font-family:'Google Sans',sans-serif;font-size:24px;font-weight:700;color:var(--blue)">+15.0 pts</div></div>
+      <div style="background:var(--green-l);border-radius:10px;padding:10px 20px;text-align:center;flex:1"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">With KG</div><div style="font-family:'Google Sans',sans-serif;font-size:24px;font-weight:700;color:var(--green)">61.4%</div></div>
+    </div>
+    <div style="flex:1;border:1px solid var(--border);border-radius:12px;overflow:hidden;min-height:0">
+      <iframe id="ragasFrame" srcdoc="" style="width:100%;height:100%;border:none;display:block"></iframe>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  var ragasHTML = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>RAGAS</title><style>:root{--bg:#ffffff;--surface:#f6f8fa;--surface2:#e8ecf0;--border:#d0d7de;--green:#1a7f37;--yellow:#9a6700;--red:#cf222e;--text:#1f2328;--text-dim:#656d76;--accent:#bf3989;--radius:8px;}*{box-sizing:border-box;margin:0;padding:0;}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);padding:16px;line-height:1.6;font-size:13px;}h1{font-size:1.1rem;font-weight:600;margin-bottom:4px;text-align:center;}h2{font-size:.9rem;font-weight:600;}.subtitle{color:var(--text-dim);font-size:0.75rem;margin-bottom:16px;text-align:center;}.comparison{display:flex;gap:14px;}.col{flex:1;min-width:0;}.col-header{display:flex;align-items:center;gap:8px;margin-bottom:10px;}.col-header h2{font-size:.9rem;font-weight:600;}.badge{font-size:0.58rem;text-transform:uppercase;letter-spacing:0.4px;padding:2px 7px;border-radius:4px;font-weight:600;}.badge-with-kg{background:rgba(26,127,55,0.1);color:var(--green);border:1px solid rgba(26,127,55,0.3);}.badge-no-kg{background:rgba(154,103,0,0.1);color:var(--yellow);border:1px solid rgba(154,103,0,0.3);}.stats-row{display:flex;gap:8px;margin-bottom:10px;}.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:8px 12px;flex:1;}.stat-card .label{font-size:0.58rem;text-transform:uppercase;color:var(--text-dim);letter-spacing:0.4px;margin-bottom:2px;}.stat-card .value{font-size:1rem;font-weight:700;}.metric-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-bottom:12px;}.metric-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:10px;}.metric-card .label{font-size:0.6rem;color:var(--text-dim);margin-bottom:3px;}.metric-card .score{font-size:1rem;font-weight:700;}.token-section{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-bottom:12px;}.token-section h3{font-size:0.65rem;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.3px;color:var(--text-dim);}.token-grid{display:flex;gap:12px;flex-wrap:wrap;}.token-item{display:flex;flex-direction:column;gap:1px;}.token-item .tl{font-size:0.58rem;text-transform:uppercase;color:var(--text-dim);letter-spacing:0.3px;}.token-item .tv{font-size:0.85rem;font-weight:600;font-variant-numeric:tabular-nums;}.token-item .tv.total{color:var(--accent);}.task-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:6px;overflow:hidden;}.task-header{display:flex;align-items:center;gap:6px;padding:8px 10px;cursor:pointer;user-select:none;}.task-header:hover{background:rgba(0,0,0,0.02);}.task-header .toggle{color:var(--text-dim);font-size:0.65rem;width:14px;text-align:center;flex-shrink:0;}.task-header .num{font-size:0.6rem;color:var(--text-dim);flex-shrink:0;min-width:20px;}.task-header .cat{font-size:0.52rem;text-transform:uppercase;letter-spacing:0.4px;background:var(--surface2);padding:1px 5px;border-radius:3px;color:var(--text-dim);flex-shrink:0;}.task-header .q{flex:1;font-size:0.68rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.task-header .mini-scores{display:flex;gap:6px;font-size:0.62rem;flex-shrink:0;}.task-header .mini-scores .ms{text-align:center;min-width:36px;}.task-header .mini-scores .ms .mv{font-weight:600;}.score-green{color:var(--green);font-weight:600;}.score-yellow{color:var(--yellow);font-weight:600;}.score-red{color:var(--red);font-weight:600;}.task-body{display:none;padding:0 10px 10px;border-top:1px solid var(--border);}.task-body.open{display:block;}.score-summary{display:flex;gap:12px;flex-wrap:wrap;padding:8px 0;font-size:0.7rem;}.score-summary .ss-item{display:flex;flex-direction:column;gap:2px;}.score-summary .ss-item .ss-label{font-size:0.58rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.3px;}.resp-box{background:#f0f2f5;border-radius:5px;padding:8px;font-size:0.6rem;max-height:160px;overflow-y:auto;white-space:pre-wrap;font-family:'SF Mono','Cascadia Code','Consolas',monospace;line-height:1.4;margin-top:5px;border-left:3px solid var(--green);}.resp-box .label{display:block;font-size:0.52rem;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px;font-family:-apple-system,sans-serif;font-weight:600;color:var(--text-dim);}.bar-bg{display:inline-block;width:44px;height:7px;background:var(--surface2);border-radius:3px;vertical-align:middle;margin-right:5px;overflow:hidden;}.bar-fill{height:100%;border-radius:3px;min-width:2px;background:var(--green);}.bar-fill.yellow{background:var(--yellow);}.bar-fill.red{background:var(--red);}.text-dim{color:var(--text-dim);}.text-sm{font-size:0.65rem;}.top-summary{display:flex;gap:12px;margin:0 auto 16px;justify-content:center;flex-wrap:wrap;}.summary-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 18px;text-align:center;min-width:160px;}.summary-card .sl{font-size:0.58rem;text-transform:uppercase;color:var(--text-dim);letter-spacing:0.4px;margin-bottom:3px;}.summary-card .sv{font-size:1.1rem;font-weight:700;}</style></head><body><h1>RAGAS Evaluation — With KG vs Without KG</h1><p class="subtitle">2 cases · Faithfulness metric</p><div class="top-summary"><div class="summary-card"><div class="sl">Faithfulness</div><div class="sv" style="color:var(--green)">+15.0%</div><div class="text-dim text-sm">with KG: 61.4% · without: 46.4%</div></div></div><div class="comparison"><div class="col"><div class="col-header"><h2>With Knowledge Graph</h2><span class="badge badge-with-kg">KG</span></div><div class="stats-row"><div class="stat-card"><div class="label">Total Cases</div><div class="value">2</div></div><div class="stat-card"><div class="label">Total Tokens</div><div class="value">58,287</div></div></div><div class="metric-grid"><div class="metric-card"><div class="label">Faithfulness</div><div class="score score-yellow">61.4%</div></div></div><div class="token-section"><h3>Token Usage</h3><div class="token-grid"><div class="token-item"><span class="tv total">37,264</span><span class="tl">prompt</span></div><div class="token-item"><span class="tv total">21,023</span><span class="tl">completion</span></div><div class="token-item"><span class="tv total">58,287</span><span class="tl">total</span></div></div></div><div class="task-card"><div class="task-header" onclick="toggleTask(this)"><span class="toggle">▶</span><span class="num">1</span><span class="cat">complex</span><span class="q">Design a client-side response caching layer…</span><span class="mini-scores"><span class="ms"><span class="mv score-red">0.227</span><br><span class="text-dim text-sm">faithfulness</span></span></span></div><div class="task-body"><div class="score-summary"><div class="ss-item"><span class="ss-label">Faithfulness</span><span style="font-size:1em;font-weight:700;color:var(--red)">0.227</span></div></div><div style="margin-bottom:6px"><div style="display:flex;align-items:center;gap:6px;font-size:0.62rem;margin-bottom:3px"><span style="min-width:90px;color:var(--text-dim)">Faithfulness</span><span class="bar-bg"><span class="bar-fill red" style="width:23%"></span></span><span class="score-red">0.227</span></div></div><div class="resp-box"><span class="label">Response</span>Here's the design:
+
+Cache Key: The existing buildCacheKey is correct. Note apiKey is deliberately excluded.
+
+Cache Invalidation:
+- TTL expiry: Already implemented. 1h default.
+- Periodic sweep: Add pruneExpired() inside set().</div></div></div><div class="task-card"><div class="task-header" onclick="toggleTask(this)"><span class="toggle">▶</span><span class="num">2</span><span class="cat">complex</span><span class="q">Explore the codebase thoroughly. I need to understand…</span><span class="mini-scores"><span class="ms"><span class="mv score-green">1.000</span><br><span class="text-dim text-sm">faithfulness</span></span></span></div><div class="task-body"><div class="score-summary"><div class="ss-item"><span class="ss-label">Faithfulness</span><span style="font-size:1em;font-weight:700;color:var(--green)">1.000</span></div></div><div style="margin-bottom:6px"><div style="display:flex;align-items:center;gap:6px;font-size:0.62rem;margin-bottom:3px"><span style="min-width:90px;color:var(--text-dim)">Faithfulness</span><span class="bar-bg"><span class="bar-fill green" style="width:100%"></span></span><span class="score-green">1.000</span></div></div><div class="resp-box"><span class="label">Response</span>I'll start by exploring the project structure and running multiple searches in parallel. Here is a comprehensive report of my findings.
+
+## 1. CACHING MECHANISM
+The codebase uses a client-side GenerationCache with TTL-based expiry...</div></div></div></div><div class="col"><div class="col-header"><h2>Without Knowledge Graph</h2><span class="badge badge-no-kg">No KG</span></div><div class="stats-row"><div class="stat-card"><div class="label">Total Cases</div><div class="value">2</div></div><div class="stat-card"><div class="label">Total Tokens</div><div class="value">45,323</div></div></div><div class="metric-grid"><div class="metric-card"><div class="label">Faithfulness</div><div class="score score-red">46.4%</div></div></div><div class="token-section"><h3>Token Usage</h3><div class="token-grid"><div class="token-item"><span class="tv total">29,481</span><span class="tl">prompt</span></div><div class="token-item"><span class="tv total">15,842</span><span class="tl">completion</span></div><div class="token-item"><span class="tv total">45,323</span><span class="tl">total</span></div></div></div><div class="task-card"><div class="task-header" onclick="toggleTask(this)"><span class="toggle">▶</span><span class="num">1</span><span class="cat">complex</span><span class="q">Design a client-side response caching layer…</span><span class="mini-scores"><span class="ms"><span class="mv score-red">0.000</span><br><span class="text-dim text-sm">faithfulness</span></span></span></div><div class="task-body"><div class="score-summary"><div class="ss-item"><span class="ss-label">Faithfulness</span><span style="font-size:1em;font-weight:700;color:var(--red)">0.000</span></div></div><div style="margin-bottom:6px"><div style="display:flex;align-items:center;gap:6px;font-size:0.62rem;margin-bottom:3px"><span style="min-width:90px;color:var(--text-dim)">Faithfulness</span><span class="bar-bg"><span class="bar-fill red" style="width:0%"></span></span><span class="score-red">0.000</span></div></div><div class="resp-box"><span class="label">Response</span>## Cache Layer Design
+
+SHA-256(prompt + '|' + type) — hashing prevents oversized keys. Two-tier key resolution:
+1. Primary key (fast lookup): hash → cached response
+2. Secondary index (invalidation)</div></div></div><div class="task-card"><div class="task-header" onclick="toggleTask(this)"><span class="toggle">▶</span><span class="num">2</span><span class="cat">complex</span><span class="q">Explore the codebase thoroughly. I need to understand…</span><span class="mini-scores"><span class="ms"><span class="mv score-green">0.929</span><br><span class="text-dim text-sm">faithfulness</span></span></span></div><div class="task-body"><div class="score-summary"><div class="ss-item"><span class="ss-label">Faithfulness</span><span style="font-size:1em;font-weight:700;color:var(--green)">0.929</span></div></div><div style="margin-bottom:6px"><div style="display:flex;align-items:center;gap:6px;font-size:0.62rem;margin-bottom:3px"><span style="min-width:90px;color:var(--text-dim)">Faithfulness</span><span class="bar-bg"><span class="bar-fill green" style="width:93%"></span></span><span class="score-green">0.929</span></div></div><div class="resp-box"><span class="label">Response</span>I'll systematically explore the codebase with multiple parallel searches.
+
+Here is the comprehensive analysis of PixelForge — architecture, providers, caching, and component structure.</div></div></div></div></div><script>function toggleTask(h){var b=h.nextElementSibling;var t=h.querySelector('.toggle');if(b.classList.contains('open')){b.classList.remove('open');t.textContent='▶';}else{b.classList.add('open');t.textContent='▼';}}<\/script></body></html>`;
+  var frame = document.getElementById('ragasFrame');
+  if (frame) frame.srcdoc = ragasHTML;
+})();
+</script>
+
+<!-- ═══ 6 — GateMid Architecture (redesigned) ═══ -->
+<div class="slide" data-track="Non-Human Layer">
+  <div class="topbar">
+    <div class="topbar-left"><div class="topbar-logo"><span style="background:#1A73E8"></span><span style="background:#34A853"></span><span style="background:#F9AB00"></span><span style="background:#EA4335"></span></div><span class="topbar-title">Part 2 — GateMid Proxy</span></div>
+    <span class="topbar-counter">6 / 12</span>
+  </div>
+  <div class="body">
+    <div class="eyebrow">Non-Human Layer</div>
+    <div class="headline">One gateway. Six checkpoints. Every request.</div>
+    <div class="stage-row" style="align-items:stretch">
+      <div style="width:170px;flex-shrink:0;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:10px">
+        <div style="border:2px solid var(--blue);border-radius:14px;padding:16px 14px;text-align:center;background:var(--blue-l);width:100%">
+          <div style="font-family:'Google Sans',sans-serif;font-size:13px;font-weight:700;color:var(--blue-d);margin-bottom:8px">Tools</div>
+          <div style="display:flex;flex-direction:column;gap:5px">
+            <span class="pill" style="justify-content:center">Claude Code</span>
+            <span class="pill" style="justify-content:center">Open Code</span>
+            <span class="pill" style="justify-content:center">Any SDK</span>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;padding:0 14px;flex-shrink:0"><div style="width:24px;height:2px;background:var(--blue)"></div></div>
+
+      <div style="flex:1;display:flex;flex-direction:column;justify-content:center;min-width:0">
+        <div style="border:1.5px solid var(--border);border-radius:16px;padding:16px 22px;display:flex;flex-direction:column;gap:9px">
+          <div style="display:flex;align-items:center;gap:12px;border-radius:9px;background:var(--red-l);padding:8px 14px">
+            <div style="width:9px;height:9px;border-radius:50%;background:var(--red);flex-shrink:0"></div>
+            <div style="flex:1"><div style="font-family:'Google Sans',sans-serif;font-size:13px;font-weight:700;color:var(--red)">Mask Secrets</div></div>
+            <div style="font-size:10.5px;color:#C5221F">8 regex patterns, before it leaves</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;border-radius:9px;background:var(--amber-l);padding:8px 14px">
+            <div style="width:9px;height:9px;border-radius:50%;background:var(--amber);flex-shrink:0"></div>
+            <div style="flex:1"><div style="font-family:'Google Sans',sans-serif;font-size:13px;font-weight:700;color:#A56600">Compress (Headroom)</div></div>
+            <div style="font-size:10.5px;color:#A56600">60–95% fewer tokens</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;border-radius:9px;background:var(--purple-l);padding:8px 14px">
+            <div style="width:9px;height:9px;border-radius:50%;background:var(--purple);flex-shrink:0"></div>
+            <div style="flex:1"><div style="font-family:'Google Sans',sans-serif;font-size:13px;font-weight:700;color:var(--purple)">Inject Skills</div></div>
+            <div style="font-size:10.5px;color:#7B2FD6">$trigger tokens → skill.md</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;border-radius:9px;background:var(--blue-l);padding:8px 14px">
+            <div style="width:9px;height:9px;border-radius:50%;background:var(--blue);flex-shrink:0"></div>
+            <div style="flex:1"><div style="font-family:'Google Sans',sans-serif;font-size:13px;font-weight:700;color:var(--blue)">Route by Complexity</div></div>
+            <div style="font-size:10.5px;color:var(--blue-d)">7-dim classifier, &lt;1ms</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;border-radius:9px;background:var(--red-l);padding:8px 14px">
+            <div style="width:9px;height:9px;border-radius:50%;background:var(--red);flex-shrink:0"></div>
+            <div style="flex:1"><div style="font-family:'Google Sans',sans-serif;font-size:13px;font-weight:700;color:var(--red)">Fallback on Failure</div></div>
+            <div style="font-size:10.5px;color:#C5221F">Multi-deployment + cross-model</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;border-radius:9px;background:var(--green-l);padding:8px 14px">
+            <div style="width:9px;height:9px;border-radius:50%;background:var(--green);flex-shrink:0"></div>
+            <div style="flex:1"><div style="font-family:'Google Sans',sans-serif;font-size:13px;font-weight:700;color:var(--green)">Score with Ragas</div></div>
+            <div style="font-size:10.5px;color:#2D7A3D">Async, zero latency</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;padding:0 14px;flex-shrink:0"><div style="width:24px;height:2px;background:var(--green)"></div></div>
+      <div style="width:170px;flex-shrink:0;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:10px">
+        <div style="border:2px solid var(--green);border-radius:14px;padding:16px 14px;text-align:center;background:var(--green-l);width:100%">
+          <div style="font-family:'Google Sans',sans-serif;font-size:13px;font-weight:700;color:#1E6E38;margin-bottom:8px">LLM Provider</div>
+          <div style="display:flex;flex-direction:column;gap:5px">
+            <span class="pill" style="justify-content:center">Gemini</span>
+            <span class="pill" style="justify-content:center">DeepSeek</span>
+            <span class="pill" style="justify-content:center">OpenAI / Bedrock</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 7 — Routing + Compression (richer) ═══ -->
+<div class="slide" data-track="Non-Human Layer">
+  <div class="topbar">
+    <div class="topbar-left"><div class="topbar-logo"><span style="background:#1A73E8"></span><span style="background:#34A853"></span><span style="background:#F9AB00"></span><span style="background:#EA4335"></span></div><span class="topbar-title">GateMid — Save Money</span></div>
+    <span class="topbar-counter">7 / 12</span>
+  </div>
+  <div class="body">
+    <div class="eyebrow">Route smart. Compress hard. Together.</div>
+    <div class="headline">Don't pay pro prices for a simple question</div>
+    <div class="stage-row" style="align-items:stretch;gap:14px">
+
+      <div style="flex:1;border:1.5px solid var(--border);border-radius:14px;padding:16px 18px;display:flex;flex-direction:column">
+        <div class="half-title" style="font-size:15px;margin-bottom:6px">1 · Complexity Router</div>
+        <svg viewBox="0 0 300 140" preserveAspectRatio="xMidYMid meet" style="flex:1">
+          <rect x="60" y="90" width="44" height="30" rx="4" fill="#E8F0FE"/><text x="82" y="108" text-anchor="middle" font-size="9" fill="#1A73E8" font-weight="600" font-family="Google Sans">SIMPLE</text>
+          <rect x="112" y="68" width="44" height="52" rx="4" fill="#C5D8FC"/><text x="134" y="90" text-anchor="middle" font-size="8.5" fill="#1A73E8" font-weight="600" font-family="Google Sans">MEDIUM</text>
+          <rect x="164" y="36" width="44" height="84" rx="4" fill="#1A73E8"/><text x="186" y="58" text-anchor="middle" font-size="8.5" fill="white" font-weight="600" font-family="Google Sans">COMPLEX</text>
+          <rect x="216" y="14" width="36" height="106" rx="4" fill="#1557B0"/><text x="234" y="34" text-anchor="middle" font-size="8" fill="white" font-weight="600" font-family="Google Sans">REASON</text>
+          <line x1="40" y1="120" x2="270" y2="120" stroke="#DADCE0"/>
+        </svg>
+        <div class="chiprow" style="margin-top:8px"><span class="chip blue">reasoning markers 30%</span><span class="chip blue">code presence 10%</span><span class="chip gray">+5 more signals</span></div>
+      </div>
+
+      <div style="display:flex;align-items:center;flex-shrink:0"><svg width="26" height="26" viewBox="0 0 24 24"><path d="M4 12h14m0 0l-5-5m5 5l-5 5" stroke="#5F6368" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+
+      <div style="flex:1;border:1.5px solid var(--border);border-radius:14px;padding:16px 18px;display:flex;flex-direction:column">
+        <div class="half-title" style="font-size:15px;margin-bottom:6px">2 · Headroom Compression</div>
+        <div style="display:flex;flex-direction:column;gap:9px;flex:1;justify-content:center">
+          <div><div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink2);margin-bottom:3px"><span>FHIR / HL7 / JSON</span><span style="font-weight:600;color:var(--green)">~90%</span></div><div style="height:7px;background:var(--surface);border-radius:4px"><div style="height:100%;width:90%;background:var(--green);border-radius:4px"></div></div></div>
+          <div><div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink2);margin-bottom:3px"><span>Source code (AST)</span><span style="font-weight:600;color:var(--green)">~65%</span></div><div style="height:7px;background:var(--surface);border-radius:4px"><div style="height:100%;width:65%;background:var(--green);border-radius:4px"></div></div></div>
+          <div><div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink2);margin-bottom:3px"><span>Logs / tool output</span><span style="font-weight:600;color:var(--green)">~95%</span></div><div style="height:7px;background:var(--surface);border-radius:4px"><div style="height:100%;width:95%;background:var(--green);border-radius:4px"></div></div></div>
+        </div>
+        <div class="chiprow" style="margin-top:8px"><span class="chip green">SmartCrusher</span><span class="chip green">CodeCompressor</span><span class="chip green">CacheAligner</span></div>
+      </div>
+
+      <div style="display:flex;align-items:center;flex-shrink:0"><svg width="26" height="26" viewBox="0 0 24 24"><path d="M4 12h14m0 0l-5-5m5 5l-5 5" stroke="#5F6368" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+
+      <div style="width:150px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;background:var(--blue-l);border-radius:14px;padding:16px 10px">
+        <div style="font-family:'Google Sans',sans-serif;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Net effect</div>
+        <div style="font-family:'Google Sans',sans-serif;font-size:30px;font-weight:700;color:var(--blue)">↓ Cost</div>
+        <div style="font-size:11px;color:var(--blue-d);margin-top:4px">before the model ever runs</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 8 — Guardrails + Skills (richer) ═══ -->
+<div class="slide" data-track="Non-Human Layer">
+  <div class="topbar">
+    <div class="topbar-left"><div class="topbar-logo"><span style="background:#1A73E8"></span><span style="background:#34A853"></span><span style="background:#F9AB00"></span><span style="background:#EA4335"></span></div><span class="topbar-title">GateMid — Intercept &amp; Inject</span></div>
+    <span class="topbar-counter">8 / 12</span>
+  </div>
+  <div class="body">
+    <div class="eyebrow red">Every message, intercepted</div>
+    <div class="headline">What leaves is safe. What arrives is smarter.</div>
+    <div class="split" style="margin-top:16px">
+      <div class="split-half" style="justify-content:center">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+          <div class="icon-circle" style="background:var(--red-l);margin-bottom:0"><svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6l8-4z" stroke="#EA4335" stroke-width="1.8"/></svg></div>
+          <div class="half-title" style="margin-bottom:0">Secrets Masking</div>
+        </div>
+
+        <div class="rail" style="margin-bottom:14px">
+          <div class="rail-node"><div class="rail-dot" style="background:var(--red)"></div><div class="rail-label" style="font-size:13px">Inbound request</div></div>
+          <div class="rail-bar"></div>
+          <div class="rail-node"><div class="rail-dot" style="background:var(--red)"></div><div><div class="rail-label" style="font-size:13px">ApiKeyMaskingMiddleware scans</div><div class="rail-sub">8 patterns: Gemini · HuggingFace · GitHub · AWS · sk- · Bearer · generic 36+ char</div></div></div>
+          <div class="rail-bar"></div>
+          <div class="rail-node"><div class="rail-dot" style="background:var(--green)"></div><div class="rail-label" style="font-size:13px">Clean request forwarded</div></div>
+        </div>
+
+        <div style="background:var(--surface);border-radius:8px;padding:9px 12px;font-family:'Roboto Mono',monospace;font-size:11px;color:var(--ink2);margin-bottom:14px">
+          sk-live-9f2e...c81a<br><span style="color:var(--red)">→ sk-****[REDACTED]</span> &nbsp;(key type prefix kept)
+        </div>
+
+        <div class="card" style="background:var(--amber-l);border:1px solid #f5dfa0;border-radius:10px;padding:10px 14px">
+          <div style="font-size:12px;font-weight:600;color:#C26D00;margin-bottom:2px">Extends to PHI / PII</div>
+          <div style="font-size:11.5px;color:var(--ink2);line-height:1.4">Same middleware pattern — patient names, MRNs, DOBs masked for FHIR/HL7 workflows under HIPAA.</div>
+        </div>
+      </div>
+
+      <div class="split-seam"></div>
+
+      <div class="split-half" style="justify-content:center">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+          <div class="icon-circle" style="background:var(--purple-l);margin-bottom:0"><svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z" stroke="#9334E6" stroke-width="1.6" stroke-linejoin="round" fill="none"/></svg></div>
+          <div class="half-title" style="margin-bottom:0"><code style="font-size:16px;background:none;color:var(--purple)">$trigger</code> Skill Injection</div>
+        </div>
+
+        <div class="rail" style="margin-bottom:14px">
+          <div class="rail-node"><div class="rail-dot" style="background:var(--purple)"></div><div><div class="rail-label" style="font-size:13px">User types "$ponytail fix this bug"</div><div class="rail-sub">SkillInjector scans every message for $-prefixed triggers</div></div></div>
+          <div class="rail-bar"></div>
+          <div class="rail-node"><div class="rail-dot" style="background:var(--purple)"></div><div><div class="rail-label" style="font-size:13px">Registry lookup + injection</div><div class="rail-sub">Skill markdown injected into system prompt, before compression</div></div></div>
+          <div class="rail-bar"></div>
+          <div class="rail-node"><div class="rail-dot" style="background:var(--green)"></div><div class="rail-label" style="font-size:13px">Logged — <code>X-GateMid-Skill-Applied</code></div></div>
+        </div>
+
+        <div style="display:flex;gap:8px;margin-bottom:14px">
+          <div style="flex:1;background:var(--purple-l);border-radius:8px;padding:8px 10px"><div style="font-size:11.5px;font-weight:600;color:var(--purple)"><code style="background:none;color:var(--purple)">$ponytail</code></div><div style="font-size:10.5px;color:var(--ink2);margin-top:1px">7-rung minimalism ladder, ~54% LOC cut</div></div>
+          <div style="flex:1;background:var(--purple-l);border-radius:8px;padding:8px 10px"><div style="font-size:11.5px;font-weight:600;color:var(--purple)"><code style="background:none;color:var(--purple)">$caveman</code></div><div style="font-size:10.5px;color:var(--ink2);margin-top:1px">Ultra-concise, 65–75% token cut</div></div>
+        </div>
+
+        <div class="chiprow"><span class="chip purple">multi-skill: $caveman $ponytail</span><span class="chip purple">auto-discovered from .md</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 9 — Reliability + Scoring (richer) ═══ -->
+<div class="slide" data-track="Non-Human Layer">
+  <div class="topbar">
+    <div class="topbar-left"><div class="topbar-logo"><span style="background:#1A73E8"></span><span style="background:#34A853"></span><span style="background:#F9AB00"></span><span style="background:#EA4335"></span></div><span class="topbar-title">GateMid — Reliability &amp; Feedback</span></div>
+    <span class="topbar-counter">9 / 12</span>
+  </div>
+  <div class="body">
+    <div class="eyebrow">After the request is sent</div>
+    <div class="headline">It never fails silently. It always keeps score.</div>
+    <div class="split" style="margin-top:16px">
+      <div class="split-half" style="justify-content:center">
+        <div class="half-title" style="font-size:17px;margin-bottom:12px">Auto Fallback</div>
+
+        <div class="rail" style="margin-bottom:12px">
+          <div class="rail-node"><div class="rail-dot" style="background:var(--blue)"></div><div><div class="rail-label" style="font-size:13px">Tier 1 — same model, multi-deployment</div><div class="rail-sub">order 1 fails (401/429/timeout) → order 2 tried transparently</div></div></div>
+          <div class="rail-bar"></div>
+          <div class="rail-node"><div class="rail-dot" style="background:var(--red)"></div><div><div class="rail-label" style="font-size:13px">Tier 2 — cross-model chain</div><div class="rail-sub">last resort: switch to a different model group entirely</div></div></div>
+          <div class="rail-bar"></div>
+          <div class="rail-node"><div class="rail-dot" style="background:var(--green)"></div><div class="rail-label" style="font-size:13px">Logged to Redis + interactive TUI board</div></div>
+        </div>
+
+        <div style="background:var(--surface);border-radius:8px;padding:9px 14px;font-family:'Roboto Mono',monospace;font-size:11px;color:var(--ink2);line-height:1.7;margin-bottom:12px">
+          gemini-flash<br>&nbsp;&nbsp;├── <span style="color:var(--green)">order 1</span> → gemini<br>&nbsp;&nbsp;└── <span style="color:var(--red)">order 2</span> → deepseek
+        </div>
+
+        <div style="display:flex;gap:14px">
+          <div style="font-size:11px;color:var(--muted)"><strong style="color:var(--ink)">1</strong> retry / deployment</div>
+          <div style="font-size:11px;color:var(--muted)"><strong style="color:var(--ink)">30s</strong> timeout</div>
+          <div style="font-size:11px;color:var(--muted)"><strong style="color:var(--ink)">3/min</strong> allowed fails</div>
+          <div style="font-size:11px;color:var(--muted)"><strong style="color:var(--ink)">60s</strong> cooldown</div>
+        </div>
+      </div>
+
+      <div class="split-seam"></div>
+
+      <div class="split-half" style="justify-content:center">
+        <div class="half-title" style="font-size:17px;margin-bottom:12px">Async Ragas Scoring</div>
+
+        <div class="rail" style="margin-bottom:12px">
+          <div class="rail-node"><div class="rail-dot" style="background:var(--blue)"></div><div class="rail-label" style="font-size:13px">LLM responds — returned immediately</div></div>
+          <div class="rail-bar"></div>
+          <div class="rail-node"><div class="rail-dot" style="background:var(--blue)"></div><div><div class="rail-label" style="font-size:13px">RagasLogger enqueues to Redis</div><div class="rail-sub"><code>eval:pending</code> queue — no request blocked</div></div></div>
+          <div class="rail-bar"></div>
+          <div class="rail-node"><div class="rail-dot" style="background:var(--green)"></div><div><div class="rail-label" style="font-size:13px">Eval-worker scores, async</div><div class="rail-sub">DeepSeek as judge, Gemini for embeddings</div></div></div>
+        </div>
+
+        <div style="display:flex;gap:8px;margin-bottom:10px">
+          <div style="flex:1;text-align:center;background:var(--surface);border-radius:8px;padding:9px 4px"><div style="font-family:'Google Sans',sans-serif;font-size:11.5px;font-weight:700">Faithful</div><div class="chip blue" style="margin-top:4px;font-size:9.5px">40%</div><div style="font-size:9px;color:var(--muted);margin-top:3px">grounded in context?</div></div>
+          <div style="flex:1;text-align:center;background:var(--surface);border-radius:8px;padding:9px 4px"><div style="font-family:'Google Sans',sans-serif;font-size:11.5px;font-weight:700">Relevant</div><div class="chip blue" style="margin-top:4px;font-size:9.5px">40%</div><div style="font-size:9px;color:var(--muted);margin-top:3px">answers the ask?</div></div>
+          <div style="flex:1;text-align:center;background:var(--surface);border-radius:8px;padding:9px 4px"><div style="font-family:'Google Sans',sans-serif;font-size:11.5px;font-weight:700">Precise</div><div class="chip gray" style="margin-top:4px;font-size:9.5px">20%</div><div style="font-size:9px;color:var(--muted);margin-top:3px">no noisy context?</div></div>
+        </div>
+
+        <div class="half-line">Zero added latency — scored records and leaderboards land in Redis, queryable any time.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 10 — Roadmap (with router-tuning added) ═══ -->
+<div class="slide" data-track="Roadmap">
+  <div class="topbar">
+    <div class="topbar-left"><div class="topbar-logo"><span style="background:#1A73E8"></span><span style="background:#34A853"></span><span style="background:#F9AB00"></span><span style="background:#EA4335"></span></div><span class="topbar-title">What's Next</span></div>
+    <span class="topbar-counter">10 / 12</span>
+  </div>
+  <div class="body">
+    <div class="eyebrow">The loop closes itself</div>
+    <div class="headline" style="font-size:32px">Ragas scores feed back into the system that produced them</div>
+    <div class="stage-row">
+      <div class="graphic">
+        <svg viewBox="0 0 420 320" preserveAspectRatio="xMidYMid meet">
+          <circle cx="210" cy="50" r="42" fill="#E8F0FE"/><text x="210" y="46" text-anchor="middle" font-size="11" font-weight="700" fill="#1A73E8" font-family="Google Sans">Response</text><text x="210" y="59" text-anchor="middle" font-size="8.5" fill="#1A73E8" font-family="Google Sans">sent</text>
+          <path d="M210 92 L210 122" stroke="#DADCE0" stroke-width="2" marker-end="url(#a1)"/>
+          <circle cx="210" cy="160" r="42" fill="#E6F4EA"/><text x="210" y="156" text-anchor="middle" font-size="11" font-weight="700" fill="#34A853" font-family="Google Sans">Ragas</text><text x="210" y="169" text-anchor="middle" font-size="8.5" fill="#34A853" font-family="Google Sans">scores it</text>
+          <path d="M172 184 L110 220" stroke="#DADCE0" stroke-width="2" marker-end="url(#a1)"/>
+          <path d="M248 184 L310 220" stroke="#DADCE0" stroke-width="2" marker-end="url(#a1)"/>
+          <circle cx="90" cy="252" r="46" fill="#FEF7E0"/><text x="90" y="246" text-anchor="middle" font-size="10" font-weight="700" fill="#C26D00" font-family="Google Sans">New Skill</text><text x="90" y="259" text-anchor="middle" font-size="8.5" fill="#C26D00" font-family="Google Sans">template</text><text x="90" y="271" text-anchor="middle" font-size="8" fill="#C26D00" font-family="Google Sans">auto-generated</text>
+          <circle cx="330" cy="252" r="46" fill="#F3E8FD"/><text x="330" y="246" text-anchor="middle" font-size="10" font-weight="700" fill="#9334E6" font-family="Google Sans">Router</text><text x="330" y="259" text-anchor="middle" font-size="8.5" fill="#9334E6" font-family="Google Sans">re-tuned</text><text x="330" y="271" text-anchor="middle" font-size="8" fill="#9334E6" font-family="Google Sans">weights, not fixed</text>
+          <defs><marker id="a1" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L6,3 z" fill="#DADCE0"/></marker></defs>
+        </svg>
+      </div>
+      <div class="side">
+        <div class="microcopy" style="max-width:270px;font-size:13.5px;margin-bottom:4px">Today the complexity router uses <strong>fixed weights</strong> (30% reasoning markers, 10% code presence...). Next: let live Ragas scores <strong>adjust those weights</strong> — a request type that keeps scoring low on a cheap tier gets bumped up automatically.</div>
+        <div class="divider-thin"></div>
+        <div class="pillrow">
+          <span class="pill on">Ragas-Tuned Router</span>
+          <span class="pill on">Skill Marketplace</span>
+          <span class="pill on">Domain Graph (FHIR/HL7)</span>
+          <span class="pill on">PHI Masking</span>
+          <span class="pill on">Org Dashboard</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 11 — Live Demo ═══ -->
+<div class="slide" data-track="Demo">
+  <div class="topbar">
+    <div class="topbar-left"><div class="topbar-logo"><span style="background:#1A73E8"></span><span style="background:#34A853"></span><span style="background:#F9AB00"></span><span style="background:#EA4335"></span></div><span class="topbar-title">Live Demo</span></div>
+    <span class="topbar-counter">11 / 12</span>
+  </div>
+  <div class="body" style="align-items:center;justify-content:center">
+    <div style="width:100%;max-width:840px">
+      <div class="eyebrow" style="text-align:center">Live Demo</div>
+      <div class="headline xl" style="text-align:center;margin:0 auto 20px">See it in action</div>
+      <div class="split" style="margin-top:0">
+        <div class="split-half" style="align-items:center;text-align:center">
+          <div class="icon-circle" style="background:var(--green-l)"><svg width="20" height="20" viewBox="0 0 18 18" fill="none"><rect x="2" y="2" width="14" height="14" rx="3" stroke="#34A853" stroke-width="1.5"/><path d="M5 9h8M9 5v8" stroke="#34A853" stroke-width="1.5" stroke-linecap="round"/></svg></div>
+          <div class="half-title">Understand-Anything</div>
+          <div class="half-line">Open the extension → browse the graph → watch the agent trace it live.</div>
+        </div>
+        <div class="split-seam"></div>
+        <div class="split-half" style="align-items:center;text-align:center">
+          <div class="icon-circle" style="background:var(--blue-l)"><svg width="20" height="20" viewBox="0 0 18 18" fill="none"><rect x="2" y="3" width="14" height="12" rx="2" stroke="#1A73E8" stroke-width="1.5"/><path d="M6 7l2 2-2 2M10 11h2" stroke="#1A73E8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <div class="half-title">GateMid Proxy</div>
+          <div class="half-line">Send <code>$ponytail</code> → watch routing, compression, fallback, and the Ragas score, live.</div>
+        </div>
+      </div>
+      <div style="background:var(--surface);border-radius:12px;padding:12px 22px;display:flex;align-items:center;gap:14px;margin-top:18px">
+        <div style="width:8px;height:8px;border-radius:50%;background:var(--green);animation:pulse 1.5s infinite"></div>
+        <div style="font-family:'Roboto Mono',monospace;font-size:12px;color:var(--ink2)">Presenting live — follow along at <strong>localhost:4000</strong></div>
+        <style>@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}</style>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 12 — Close + Q&A ═══ -->
+<div class="slide" data-track="">
+  <div class="topbar">
+    <div class="topbar-left"><div class="topbar-logo"><span style="background:#1A73E8"></span><span style="background:#34A853"></span><span style="background:#F9AB00"></span><span style="background:#EA4335"></span></div><span class="topbar-title">Closing &amp; Q&amp;A</span></div>
+    <span class="topbar-counter">12 / 12</span>
+  </div>
+  <div class="body" style="align-items:center;justify-content:center;text-align:center">
+    <div style="max-width:780px">
+      <div class="eyebrow" style="text-align:center">Productivity and Token</div>
+      <div class="headline xl" style="margin:0 auto 18px">Two problems. One stack.</div>
+      <div class="split" style="margin-top:0;margin-bottom:20px">
+        <div class="split-half" style="align-items:center;text-align:center">
+          <div style="font-family:'Roboto Mono',monospace;font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--green);margin-bottom:6px">Human Layer</div>
+          <div class="half-num" style="color:var(--green);font-size:32px">50%</div>
+          <div class="half-line">faster comprehension</div>
+        </div>
+        <div class="split-seam"></div>
+        <div class="split-half" style="align-items:center;text-align:center">
+          <div style="font-family:'Roboto Mono',monospace;font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--blue);margin-bottom:6px">Non-Human Layer</div>
+          <div class="half-num" style="color:var(--blue);font-size:32px">60–95%</div>
+          <div class="half-line">fewer tokens per call</div>
+        </div>
+      </div>
+      <div class="chiprow" style="justify-content:center;margin-bottom:20px">
+        <span class="chip blue">Understand-Anything</span><span class="chip blue">GateMid</span><span class="chip blue">LiteLLM</span><span class="chip blue">Headroom</span><span class="chip blue">Ragas</span>
+      </div>
+      <div style="display:flex;align-items:center">
+        <div style="flex:1;height:2px;background:linear-gradient(90deg,transparent,var(--green))"></div>
+        <div style="padding:0 20px;font-family:'Google Sans',sans-serif;font-size:14px;font-weight:500;color:var(--muted);white-space:nowrap">Thank you — questions welcome</div>
+        <div style="flex:1;height:2px;background:linear-gradient(90deg,var(--blue),transparent)"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /.stage -->
+
+<!-- ── Navigation ─────────────────────────────────────────────── -->
+<nav class="nav">
+  <button class="nav-btn" id="btnPrev" onclick="navigate(-1)">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M10.5 3L5.5 8l5 5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    Previous
+  </button>
+  <div class="nav-dots" id="navDots"></div>
+  <button class="nav-btn primary" id="btnNext" onclick="navigate(1)">
+    Next
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M5.5 3l5 5-5 5" stroke="white" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
+</nav>
+</div>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  const dotsContainer = document.getElementById('navDots');
+  let current = 0;
+  slides.forEach((_, i) => {
+    const d = document.createElement('div');
+    d.className = 'nav-dot' + (i === 0 ? ' active' : '');
+    d.onclick = () => goTo(i);
+    dotsContainer.appendChild(d);
+  });
+  function goTo(n) {
+    slides[current].classList.remove('active');
+    dotsContainer.children[current].classList.remove('active');
+    current = Math.max(0, Math.min(n, slides.length - 1));
+    slides[current].classList.add('active');
+    dotsContainer.children[current].classList.add('active');
+    document.getElementById('btnPrev').disabled = current === 0;
+    document.getElementById('btnNext').disabled = current === slides.length - 1;
+    const track = slides[current].dataset.track;
+    document.querySelectorAll('.topbar-track').forEach(el => el.remove());
+    if (track) {
+      const topbar = slides[current].querySelector('.topbar-left');
+      const chip = document.createElement('span');
+      chip.className = 'topbar-track';
+      chip.textContent = track;
+      topbar.appendChild(chip);
+    }
+  }
+  function navigate(dir) { goTo(current + dir); }
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') navigate(1);
+    if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   navigate(-1);
+  });
+  goTo(0);
+</script>
+</body>
+</html>
