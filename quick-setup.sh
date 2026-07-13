@@ -723,7 +723,7 @@ litellm_settings:
   drop_params: true
   callbacks: ['proxy.callback.ragas_callback']
   num_retries: 1                    # try each deployment once before falling back
-  request_timeout: 30               # fail per-attempt if no response in 30s
+  request_timeout: 60               # fail per-attempt if no response in 30s
   allowed_fails: 3                  # cooldown model after 3 failures in a minute
   cooldown_time: 60                 # skip cooldowned model for 60 seconds
 
