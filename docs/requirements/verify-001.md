@@ -35,20 +35,105 @@ and hit the provider. The hot zone must diff as empty.
 ### 1. Get a byte-level capture point
 
 You need visibility into the outbound request Headroom/GateMid actually
-sends upstream — not what you sent into GateMid. Options, in order of
-preference:
+sends upstream — not what you sent into GateMid.
 
-- **Best**: point GateMid/Headroom's upstream `base_url` at a local mock
-  server (e.g. a tiny FastAPI/Flask app) instead of the real provider. Log
-  the full raw request body + headers for every call, then return a canned
-  response. This captures the true post-pipeline payload.
-- **OK**: if Headroom runs as a standalone proxy (`headroom proxy --port
-  8787`), check whether it exposes request logging/tracing (env var or
-  `--log-requests` type flag) that dumps the final payload before it forwards
-  it.
-- **Fallback**: enable verbose/debug logging on whatever HTTP client
-  LiteLLM/GateMid uses to talk to the provider (e.g. `httpx` logging), and
-  capture the request body from logs.
+**Do NOT swap the live `base_url` to a mock server.** If GateMid's
+`base_url` config is process-global (likely, if it's a singleton client or
+read from a single `.env`), repointing it affects *every* in-flight
+request on that process — including any live session currently talking to
+Claude through this same GateMid instance. The next turn sent through it
+would hit the mock instead of the real API and silently break or hang. This
+is a global mutation to shared infra; you want per-request, isolated
+capture instead. Use one of the options below, in order of preference:
+
+- **Quick-start (safest, zero code changes): a separate test instance.**
+  Spin up a second GateMid process on a different port, pointed at whatever
+  mock/proxy you like, using a separate config file. Your live instance and
+  live session are completely untouched — different process, different
+  port, different config.
+
+  ```bash
+  # terminal 1: your existing GateMid instance — untouched,
+  # still serving your live Claude session as normal
+
+  # terminal 2: a throwaway test instance
+  cp .env .env.test
+  # edit .env.test: point ANTHROPIC_BASE_URL (or equivalent) at your
+  # mock/proxy instead of the real API
+  GATEMID_ENV=.env.test python -m gatemid --port 8788
+
+  # run all Part 1 test cases against localhost:8788 only
+  ```
+
+- **Production-grade (best long-term): a transport-level tap on the real
+  HTTP client, with no rerouting at all.** Wrap or hook the `httpx`/
+  `requests` client LiteLLM/Headroom already uses to talk to the provider,
+  so every real outbound request — live traffic included — gets logged
+  before it's sent, then proceeds to the real API unmodified. This captures
+  true production payloads (including real routing decisions) with zero
+  risk to live sessions, since nothing is rerouted or replaced.
+
+  ```python
+  # Example using an httpx custom transport — adapt to whatever
+  # client-construction hook LiteLLM/Headroom exposes (custom
+  # transport, custom client instance, or a request-hook callback).
+  import httpx
+  import time
+  from pathlib import Path
+
+  CAPTURE_DIR = Path("/tmp/gatemid_captures")
+  CAPTURE_DIR.mkdir(exist_ok=True)
+
+  class CapturingTransport(httpx.HTTPTransport):
+      def handle_request(self, request):
+          # Passive tap: log the exact bytes about to be sent,
+          # then forward unmodified. Does not alter or intercept
+          # the request/response in any way.
+          (CAPTURE_DIR / f"{time.time_ns()}.json").write_bytes(request.content)
+          return super().handle_request(request)
+
+  # Wire into the real client, e.g.:
+  # client = httpx.Client(transport=CapturingTransport())
+  # then pass `client=` wherever LiteLLM/Headroom accepts a custom
+  # httpx client, instead of touching base_url at all.
+  ```
+
+- **Middle ground: a transparent forwarding proxy** in front of the real
+  API (not a mock — a passthrough that logs and relays). Point `base_url`
+  at this local proxy instead of a mock; it forwards every request to the
+  real Anthropic/OpenAI endpoint and relays the real response back, so live
+  sessions keep working normally with one extra logging hop. Only use this
+  on your live instance if you've verified the forwarding is fully
+  transparent (status codes, streaming, headers all pass through
+  correctly) — test it first via the separate-instance approach above.
+
+  ```python
+  # tiny FastAPI passthrough — logs then forwards to the real API
+  from fastapi import FastAPI, Request, Response
+  import httpx
+
+  app = FastAPI()
+  upstream = httpx.AsyncClient(base_url="https://api.anthropic.com")
+
+  @app.post("/v1/messages")
+  async def capture_and_forward(request: Request):
+      body = await request.body()
+      (CAPTURE_DIR / f"{time.time_ns()}.json").write_bytes(body)  # capture
+
+      resp = await upstream.post(
+          "/v1/messages",
+          content=body,
+          headers={k: v for k, v in request.headers.items() if k.lower() != "host"},
+      )
+      return Response(content=resp.content, status_code=resp.status_code,
+                       headers=dict(resp.headers))
+  ```
+
+**Recommended order of operations:** validate the test harness end-to-end
+using the separate-instance approach first (zero risk, fast to set up).
+Once it's confirmed working, if you want production-representative
+captures from real traffic, move to the transport-level tap — it requires
+no second process and never touches live routing.
 
 ### 2. Build the test harness
 
@@ -251,6 +336,26 @@ grep -rn "live_zone\|hot_zone\|frozen_prefix\|ContentRouter\|CacheAligner" --inc
   something in conversation history rather than only the live zone —
   confirm these configs are scoped correctly and not globally applied to
   the full message list.
+
+### 2.4b — Confirm whether `base_url`/client config is global or per-request
+
+This determines which capture option in Part 1 is safe to use directly on
+the instance serving live traffic.
+
+```bash
+grep -rn "base_url\|ANTHROPIC_BASE_URL\|httpx.Client(\|AsyncClient(" --include="*.py" .
+```
+- [ ] Is the upstream client constructed once at process startup (module-
+  level singleton, or constructed in an app-lifespan hook) — meaning a
+  config change requires a process restart and affects all requests? If so,
+  never test against the live process; always use a separate instance
+  (Part 1, quick-start option).
+- [ ] Or is the client/base_url resolved per-request (e.g. read fresh from
+  a request-scoped config, or injected via dependency injection per call)?
+  If so, a scoped override for test traffic only (e.g. a header-gated
+  routing rule) may be safe to add — but confirm no shared state (like the
+  Headroom session-key cache) leaks between the real and test paths before
+  relying on this.
 
 ### 2.5 — Session key / cache_control breakpoint placement
 

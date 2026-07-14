@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How LLM Prompt Caching Works</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Roboto:wght@300;400;500&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --blue:#1A73E8;--blue-d:#1557B0;--blue-l:#E8F0FE;
+    --green:#34A853;--green-l:#E6F4EA;
+    --amber:#F9AB00;--amber-l:#FEF7E0;
+    --red:#EA4335;--red-l:#FCE8E6;
+    --purple:#9334E6;--purple-l:#F3E8FD;
+    --teal:#009688;--teal-l:#E0F2F1;
+    --ink:#202124;--ink2:#3C4043;--muted:#5F6368;--border:#DADCE0;--surface:#F8F9FA;--white:#fff;
+  }
+  html,body{height:100%}
+  body{font-family:'Roboto',sans-serif;background:#E8EAED}
+  .slide{width:1280px;height:720px;background:var(--white);display:flex;flex-direction:column;margin:0 auto;box-shadow:0 4px 24px rgba(0,0,0,.12)}
+
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:0 44px;height:50px;border-bottom:1px solid var(--border);flex-shrink:0}
+  .topbar-left{display:flex;align-items:center;gap:12px}
+  .topbar-logo{display:flex;gap:4px}
+  .topbar-logo span{width:9px;height:9px;border-radius:50%;display:inline-block}
+  .topbar-title{font-family:'Google Sans',sans-serif;font-size:12.5px;font-weight:500;color:var(--muted)}
+  .topbar-track{font-size:10.5px;font-weight:500;letter-spacing:.8px;text-transform:uppercase;padding:3px 10px;border-radius:12px;background:var(--blue-l);color:var(--blue)}
+
+  .body{flex:1;min-height:0;display:flex;flex-direction:column;padding:26px 50px 22px}
+  .eyebrow{font-family:'Roboto Mono',monospace;font-size:11px;font-weight:500;letter-spacing:1.4px;text-transform:uppercase;color:var(--blue);margin-bottom:6px;flex-shrink:0}
+  .headline{font-family:'Google Sans',sans-serif;font-size:25px;font-weight:700;color:var(--ink);line-height:1.15;flex-shrink:0}
+
+  .row1{display:flex;gap:18px;margin-top:14px;flex:1.15;min-height:0}
+  .row2{display:flex;gap:18px;margin-top:14px;flex:1;min-height:0}
+
+  /* ---- Panel 1: prefix caching mechanic ---- */
+  .panel{background:var(--surface);border-radius:14px;padding:14px 18px;display:flex;flex-direction:column;min-height:0}
+  .panel-title{font-family:'Google Sans',sans-serif;font-size:12px;font-weight:700;color:var(--ink);margin-bottom:8px;display:flex;align-items:center;gap:6px}
+  .panel-title .num{width:18px;height:18px;border-radius:50%;background:var(--blue);color:white;font-size:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+
+  .p1{flex:1.4}
+  .req-compare{display:flex;flex-direction:column;gap:6px;flex:1;justify-content:center}
+  .req-bar{display:flex;height:30px;border-radius:7px;overflow:hidden}
+  .req-bar .seg{display:flex;align-items:center;justify-content:center;font-family:'Roboto Mono',monospace;font-size:9px;font-weight:500;color:white}
+  .req-label{font-size:9.5px;color:var(--muted);margin-bottom:2px;font-family:'Google Sans',sans-serif;font-weight:500}
+  .req-note{font-size:9.5px;color:var(--ink2);margin-top:2px}
+  .miss-seg{background:var(--red);flex:1}
+  .hit-seg{background:#a8dab5;color:var(--green);flex:.82}
+  .new-seg{background:var(--amber);flex:.18}
+  .hit-fill{background:var(--green)}
+
+  .p2{flex:1}
+  .savings-stat{display:flex;align-items:baseline;gap:6px;margin-top:auto}
+  .savings-stat .n{font-family:'Google Sans',sans-serif;font-size:30px;font-weight:700;color:var(--green)}
+  .savings-stat .u{font-size:11px;color:var(--muted)}
+
+  /* ---- Panel 2: hot/live zone in headroom ---- */
+  .p3{flex:1.3}
+  .zone-diagram{flex:1;display:flex;flex-direction:column;gap:6px;justify-content:center}
+  .zbar{display:flex;border-radius:9px;overflow:hidden;height:44px}
+  .zseg{display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:'Google Sans',sans-serif}
+  .zseg.hot{background:var(--blue-l);flex:.72;border-right:2px dashed var(--blue)}
+  .zseg.live{background:var(--amber-l);flex:.28}
+  .zseg .zt{font-size:10.5px;font-weight:700}
+  .zseg.hot .zt{color:var(--blue)}
+  .zseg.live .zt{color:#C26D00}
+  .zseg .zs{font-size:8.5px;color:var(--ink2)}
+  .zone-legend{display:flex;gap:14px;margin-top:6px;justify-content:center}
+  .zl{display:flex;align-items:center;gap:5px;font-size:9.5px;color:var(--ink2)}
+  .zl .sw{width:9px;height:9px;border-radius:2px}
+
+  /* ---- Panel 3: test method ---- */
+  .p4{flex:1}
+  .flowh{display:flex;align-items:center;gap:4px;flex:1;justify-content:center}
+  .fnode{background:var(--white);border:1.5px solid var(--border);border-radius:9px;padding:8px 10px;text-align:center;flex:1}
+  .fnode.you{border-color:var(--blue);background:var(--blue-l)}
+  .fnode.proxy{border-color:var(--teal);background:var(--teal-l)}
+  .fnode.real{border-color:var(--green);background:var(--green-l)}
+  .fnode .ft{font-family:'Google Sans',sans-serif;font-size:10px;font-weight:700;color:var(--ink)}
+  .fnode.you .ft{color:var(--blue-d)}
+  .fnode.proxy .ft{color:var(--teal)}
+  .fnode.real .ft{color:var(--green)}
+  .fnode .fs{font-size:8px;color:var(--muted);margin-top:1px;line-height:1.25}
+  .farrow{color:var(--border);font-size:14px;flex-shrink:0}
+  .farrow.log{color:var(--teal);font-size:9px;font-family:'Roboto Mono',monospace;display:flex;flex-direction:column;align-items:center}
+
+  .p4-caption{font-size:9.5px;color:var(--muted);text-align:center;margin-top:8px;line-height:1.4}
+  .p4-caption b{color:var(--ink);font-family:'Google Sans',sans-serif}
+</style>
+</head>
+<body>
+<div class="slide">
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="topbar-logo"><span style="background:#1A73E8"></span><span style="background:#34A853"></span><span style="background:#F9AB00"></span><span style="background:#EA4335"></span></div>
+      <span class="topbar-title">GateMid Engineering</span>
+      <span class="topbar-track">Background</span>
+    </div>
+    <span style="font-family:'Roboto Mono',monospace;font-size:11px;color:var(--muted)">2026-07-14</span>
+  </div>
+
+  <div class="body">
+    <div class="eyebrow">How prompt caching works — and how we verified it</div>
+    <div class="headline">Providers cache the shared prefix. Headroom is built to never touch it.</div>
+
+    <div class="row1">
+      <!-- Panel 1: prefix caching mechanic -->
+      <div class="panel p1">
+        <div class="panel-title"><span class="num">1</span>Prefix caching, in one request</div>
+        <div class="req-compare">
+          <div>
+            <div class="req-label">Call 1 — cold cache</div>
+            <div class="req-bar"><div class="seg miss-seg">FULL PREFILL · system prompt + tools + history</div></div>
+            <div class="req-note">Provider computes K/V for every token. Slow, full price.</div>
+          </div>
+          <div>
+            <div class="req-label">Call 2 — same prefix, warm cache</div>
+            <div class="req-bar">
+              <div class="seg hit-seg" style="background:var(--green-l);color:var(--green);border:1.5px solid var(--green)">CACHE READ · reused K/V</div>
+              <div class="seg new-seg">new turn</div>
+            </div>
+            <div class="req-note">Only the new suffix is prefilled. ~10–20% cost on the reused part, big latency win.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel 2: hot / live zone in Headroom -->
+      <div class="panel p3">
+        <div class="panel-title"><span class="num">2</span>Hot zone vs. live zone (Headroom)</div>
+        <div class="zone-diagram">
+          <div class="zbar">
+            <div class="zseg hot"><div class="zt">Hot zone</div><div class="zs">system prompt · tools · older turns</div></div>
+            <div class="zseg live"><div class="zt">Live zone</div><div class="zs">newest turn only</div></div>
+          </div>
+          <div class="zone-legend">
+            <div class="zl"><span class="sw" style="background:var(--blue)"></span>Frozen — never mutated, preserves provider cache</div>
+            <div class="zl"><span class="sw" style="background:var(--amber)"></span>protect_recent=4 boundary · SmartCrusher compresses here only</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row2">
+      <!-- Panel 3: test method -->
+      <div class="panel p4" style="flex:1">
+        <div class="panel-title"><span class="num">3</span>How we tested it — transparent forwarding proxy, zero risk to live sessions</div>
+        <div class="flowh">
+          <div class="fnode you"><div class="ft">GateMid</div><div class="fs">real routing + Headroom pipeline, unmodified</div></div>
+          <div class="farrow">→</div>
+          <div class="farrow log">tap<br>&amp; log</div>
+          <div class="farrow">→</div>
+          <div class="fnode proxy"><div class="ft">Forwarding proxy · :18000</div><div class="fs">captures raw request bytes before relaying</div></div>
+          <div class="farrow">→</div>
+          <div class="fnode real"><div class="ft">Real provider API</div><div class="fs">unchanged response flows back — live session unaffected</div></div>
+        </div>
+        <div class="p4-caption"><b>Why a proxy, not a mock:</b> swapping GateMid's base_url to a mock would freeze any live session using it. The forwarding proxy sits in front of the real API and only logs — every request still gets a real answer, so we captured 8 A–H test pairs from genuine traffic and diffed the hot-zone bytes with zero downtime.</div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

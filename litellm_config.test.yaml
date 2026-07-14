@@ -1,0 +1,89 @@
+model_list:
+  - model_name: gemini-flash
+    litellm_params:
+      model: deepseek/deepseek-v4-flash
+      api_key: "os.environ/DEEPSEEK_API_KEY"
+      api_base: http://host.docker.internal:18000/v1
+
+  - model_name: gemini-flash
+    litellm_params:
+      model: deepseek/deepseek-v4-flash
+      api_key: "os.environ/DEEPSEEK_API_KEY"
+      api_base: http://host.docker.internal:18000/v1
+      order: 2
+
+  - model_name: gemini-pro
+    litellm_params:
+      model: deepseek/deepseek-v4-flash
+      api_key: "os.environ/DEEPSEEK_API_KEY"
+      api_base: http://host.docker.internal:18000/v1
+
+  - model_name: gemini-pro
+    litellm_params:
+      model: deepseek/deepseek-v4-flash
+      api_key: "os.environ/DEEPSEEK_API_KEY"
+      api_base: http://host.docker.internal:18000/v1
+      order: 2
+
+  - model_name: deepseek-flash
+    litellm_params:
+      model: deepseek/deepseek-v4-flash
+      api_key: "os.environ/DEEPSEEK_API_KEY"
+      api_base: http://host.docker.internal:18000/v1
+
+  - model_name: deepseek-pro
+    litellm_params:
+      model: deepseek/deepseek-v4-pro
+      api_key: "os.environ/DEEPSEEK_API_KEY"
+      api_base: http://host.docker.internal:18000/v1
+
+  - model_name: deepseek-pro
+    litellm_params:
+      model: deepseek/deepseek-v4-pro
+      api_key: "os.environ/DEEPSEEK_API_KEY"
+      api_base: http://host.docker.internal:18000/v1
+      order: 2
+
+  - model_name: team-smart-router
+    litellm_params:
+      model: auto_router/complexity_router
+      complexity_router_config:
+        tiers:
+          SIMPLE: gemini-flash
+          MEDIUM: gemini-flash
+          COMPLEX: deepseek-pro
+          REASONING: deepseek-pro
+        token_thresholds:
+          simple: 100
+          complex: 2000
+        dimension_weights:
+          tokenCount: 0.05
+          codePresence: 0.10
+          reasoningMarkers: 0.30
+          technicalTerms: 0.10
+          simpleIndicators: 0.15
+          multiStepPatterns: 0.05
+          questionComplexity: 0.05
+        tier_boundaries:
+          simple_medium: 0.15
+          medium_complex: 0.3
+          complex_reasoning: 0.55
+      complexity_router_default_model: gemini-flash
+
+litellm_settings:
+  drop_params: true
+  callbacks: ['proxy.callback.ragas_callback']
+  num_retries: 1
+  request_timeout: 60
+  allowed_fails: 3
+  cooldown_time: 60
+
+router_settings:
+  fallbacks:
+    - "gemini-flash": ["deepseek-flash"]
+    - "gemini-pro": ["deepseek-flash"]
+    - "deepseek-pro": ["gemini-pro"]
+  routing_strategy: simple-shuffle
+
+general_settings:
+  master_key: "os.environ/GATEWAY_MASTER_KEY"
