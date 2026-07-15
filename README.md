@@ -490,6 +490,47 @@ Press `Enter` on any event to see the full detail view, including the original e
 | `headroom:days` | ZSet | Date index for listing latest N days |
 | `headroom:totals` | Hash | Running grand totals |
 
+### Interactive router cache-impact board
+
+Every request logged by the session-switch tracker is available for analysis. The interactive TUI shows which sessions experienced model switches, the frequency and pairs of switches, and estimated cache-miss costs — answering whether the complexity router's model changes actually cost meaningful money/latency.
+
+```bash
+# Show session model-switch data (latest data first)
+docker exec -it gatemid-headroom python -m eval.cli router
+
+# Show more days of data
+docker exec -it gatemid-headroom python -m eval.cli router --days 14
+```
+
+**Three views:**
+
+| View | Key | What it shows |
+|------|-----|---------------|
+| **Sessions overview** (default) | `↑` / `↓` navigate, `←` / `→` page, `Enter` detail, `r` report | All sessions sorted by switch count: session fingerprint, model sequence, event count, estimated cost |
+| **Session detail** | `Enter` on a session, `Esc` / `q` back | Full event timeline: timestamp, model, previous model, time gap, hot-zone tokens, within-TTL indicator, switch pair breakdown with costs |
+| **Report** | `r` from overview, `Esc` / `q` back | Answers all PRD §4 questions: switch frequency (p50/p90/max), inter-turn gap distribution, top switch pairs, lost-cache cost estimate, fingerprint spot-check |
+
+**Control reference:**
+
+| Key | Action |
+|---|---|
+| `↑` / `↓` | Navigate sessions |
+| `←` / `→` | Page up / down |
+| `Enter` / `Space` | Open session detail |
+| `r` | Show PRD §4 report |
+| `Esc` / `q` | Back / quit |
+| `Ctrl+C` | Quit |
+
+> **Note:** Requires `-it` (interactive TTY) for TUI rendering. Uses [Rich](https://github.com/Textualize/rich). Data accumulates automatically as requests flow through the gateway — run it after a period of real usage to see meaningful results.
+
+**Redis data layout (router session):**
+
+| Key | Type | Purpose |
+|-----|------|---------|
+| `router:session:{session_key}` | List | Per-request event log (LPUSH, 14-day TTL) |
+| `router:session:{session_key}:meta` | Hash | Session metadata (latest model, timestamps) |
+| `router:session:days` | ZSet | Day index for analysis queries |
+
 ### Clear Redis data for a fresh test
 
 ```bash

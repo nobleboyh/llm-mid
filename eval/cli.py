@@ -3,6 +3,8 @@
 Usage:
     python -m eval.cli score [--n 50] [--category ...] [--prompt-id ...]
     python -m eval.cli headroom [--days 14]
+    python -m eval.cli fallback [--days 14]
+    python -m eval.cli router [--days 14]
     python -m eval.cli clear-redis [--hard]
     python -m eval.cli --help
 """
@@ -17,6 +19,7 @@ COMMANDS = {
     "score": "eval.score_view_interactive",
     "headroom": "eval.headroom_view_interactive",
     "fallback": "eval.fallback_view_interactive",
+    "router": "scripts.analyze_router_cache_impact",
     "clear-redis": "eval.clear_redis",
 }
 
@@ -41,6 +44,8 @@ def main() -> None:
         from eval.headroom_view_interactive import main as fn
     elif cmd == "fallback":
         from eval.fallback_view_interactive import main as fn
+    elif cmd == "router":
+        from scripts.analyze_router_cache_impact import main as fn
     else:  # clear-redis
         from eval.clear_redis import main as fn
 

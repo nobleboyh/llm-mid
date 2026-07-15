@@ -27,6 +27,7 @@ services:
     volumes:
       - ./litellm_config.yaml:/app/litellm_config.yaml:ro
       - ./eval:/app/eval
+      - ./scripts:/app/scripts
     depends_on:
       redis:
         condition: service_started

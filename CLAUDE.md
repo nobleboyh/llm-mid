@@ -48,6 +48,9 @@ docker exec -it gatemid-headroom python -m eval.cli score
 # Eval CLI — compression stats
 docker exec -it gatemid-headroom python -m eval.cli headroom
 
+# Eval CLI — router cache-impact analysis
+docker exec -it gatemid-headroom python -m eval.cli router
+
 # Clear Redis for fresh test data
 docker exec gatemid-headroom python -m eval.cli clear-redis
 ```
