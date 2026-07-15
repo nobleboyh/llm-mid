@@ -305,20 +305,25 @@ class RagasLogger(CustomLogger):
         # ── Log session model choice for cache-miss measurement ────────────
         self._log_session_switch(kwargs)
 
-    def _log_session_switch(self, kwargs: dict) -> None:
+    def _log_session_switch(self, kwargs: dict, total_prompt_tokens: int = 0) -> None:
         """Log model choice per session for cache-miss impact measurement.
 
         Fire-and-forget — Redis writes are best-effort, never block the
         response.  Session identity comes from _session_fingerprint
         (Method A: client header -> Method B: structural hash).
 
-        Hot-zone token estimate is computed inline from the original
-        messages (same approach as _patched_compress) because ContextVars
-        do not propagate across the ASGI -> callback thread boundary.
+        Hot-zone hash and token count are computed from compressed messages
+        in the request body (the Headroom middleware swapped them in-place
+        before LiteLLM saw the request).  The hash is SHA-256 of canonical
+        JSON of all hot-zone messages (everything except the protect_recent
+        live zone).
         """
         try:
             from eval.redis_store import r as redis_client
             from proxy.skill_injector import _count_tokens
+            from headroom.compress import CompressConfig
+
+            protect_recent = CompressConfig().protect_recent
 
             session_key = _session_fingerprint(kwargs)
             if not session_key:
@@ -326,17 +331,30 @@ class RagasLogger(CustomLogger):
 
             model = kwargs.get("model", "unknown")
 
-            # Estimate hot-zone tokens inline — ContextVar doesn't cross
-            # the ASGI -> callback thread boundary (same issue as
-            # original_question_var fallback at log_success_event ~L74).
+            # Read compressed messages from request body (middleware
+            # swapped them in-place before LiteLLM processed the request).
             psr = (kwargs.get("litellm_params") or {}).get("proxy_server_request") or {}
             body = psr.get("body") or {}
-            messages = body.get("messages", [])
-            sys_text = _first_system_content(messages)
-            user_text = _first_user_content(messages)
-            hot_zone = _count_tokens(sys_text)
-            if user_text:
-                hot_zone += _count_tokens(user_text)
+            messages = body.get("messages", [])  # COMPRESSED (or raw if no compression)
+
+            # Slice hot zone: everything except protect_recent live zone
+            if len(messages) > protect_recent:
+                hot_messages = messages[:-protect_recent]
+            else:
+                hot_messages = messages  # session still growing; use what we have
+
+            # SHA-256 hash of canonical JSON (matches provider cache-key approach)
+            hot_zone_hash = hashlib.sha256(
+                json.dumps(
+                    hot_messages,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                ).encode()
+            ).hexdigest()[:8]
+
+            # Compressed hot-zone token count (or raw when no compression applied)
+            hot_zone_tokens = _count_tokens(json.dumps(hot_messages, ensure_ascii=False))
 
             meta_key = f"router:session:{session_key}:meta"
             meta = redis_client.hgetall(meta_key) or {}
@@ -352,7 +370,9 @@ class RagasLogger(CustomLogger):
                 "model": model,
                 "previous_model": last_model or None,
                 "seconds_since_last": round(gap, 1) if gap is not None else None,
-                "hot_zone_tokens": hot_zone,
+                "hot_zone_tokens": hot_zone_tokens,
+                "hot_zone_hash": hot_zone_hash,
+                "total_prompt_tokens": total_prompt_tokens,
             }
 
             list_key = f"router:session:{session_key}"

@@ -162,7 +162,7 @@ class TestSessionFingerprint:
             [{"name": "write_file"}]
         ))
 
-    def test_method_b_tool_order_deterministic(self):
+    def test_method_b_tools_deterministic(self):
         """Same tools in different order produce the same fingerprint (sorted)."""
         body = {
             "messages": [
@@ -219,7 +219,7 @@ class TestContentExtraction:
         ]
         assert _first_system_content(messages) == "System prompt"
 
-    def test_first_system_content_list_multiple(self):
+    def test_first_system_content_mixed_list(self):
         messages = [
             {"role": "system", "content": [
                 {"type": "text", "text": "Part A"},
@@ -272,9 +272,18 @@ class TestComputeSecondsSince:
 
 
 import json
+import types
 from unittest.mock import MagicMock, patch
 
 from proxy.callback import SESSION_TTL, SESSION_DAYS_KEY
+
+
+def mock_headroom_compress(protect_recent=4):
+    """Return a context manager that mocks the headroom.compress module."""
+    compress_mod = types.ModuleType("headroom.compress")
+    compress_mod.CompressConfig = MagicMock()
+    compress_mod.CompressConfig.return_value.protect_recent = protect_recent
+    return patch.dict("sys.modules", {"headroom.compress": compress_mod})
 
 
 class TestLogSessionSwitch:
@@ -305,7 +314,8 @@ class TestLogSessionSwitch:
         mock_redis = MagicMock()
         mock_redis.hgetall.return_value = {}  # no previous state
 
-        with patch("proxy.skill_injector._count_tokens", return_value=1700), \
+        with mock_headroom_compress(), \
+             patch("proxy.skill_injector._count_tokens", return_value=1700), \
              patch("eval.redis_store.r", mock_redis):
             from proxy.callback import RagasLogger
             logger = RagasLogger()
@@ -344,7 +354,8 @@ class TestLogSessionSwitch:
             "latest_timestamp": "2026-07-15T14:00:00+00:00",
         }
 
-        with patch("proxy.skill_injector._count_tokens", return_value=1700), \
+        with mock_headroom_compress(), \
+             patch("proxy.skill_injector._count_tokens", return_value=1700), \
              patch("eval.redis_store.r", mock_redis):
             from proxy.callback import RagasLogger
             logger = RagasLogger()
@@ -377,7 +388,8 @@ class TestLogSessionSwitch:
             "latest_timestamp": "2026-07-15T14:00:00+00:00",
         }
 
-        with patch("proxy.skill_injector._count_tokens", return_value=1700), \
+        with mock_headroom_compress(), \
+             patch("proxy.skill_injector._count_tokens", return_value=1700), \
              patch("eval.redis_store.r", mock_redis):
             from proxy.callback import RagasLogger
             logger = RagasLogger()
@@ -392,7 +404,8 @@ class TestLogSessionSwitch:
         mock_redis = MagicMock()
         mock_redis.hgetall.side_effect = ConnectionError("redis down")
 
-        with patch("proxy.skill_injector._count_tokens", return_value=1700), \
+        with mock_headroom_compress(), \
+             patch("proxy.skill_injector._count_tokens", return_value=1700), \
              patch("eval.redis_store.r", mock_redis):
             from proxy.callback import RagasLogger
             logger = RagasLogger()
@@ -403,7 +416,8 @@ class TestLogSessionSwitch:
         """Empty fingerprint returns early, no Redis calls."""
         mock_redis = MagicMock()
 
-        with patch("proxy.skill_injector._count_tokens", return_value=0), \
+        with mock_headroom_compress(), \
+             patch("proxy.skill_injector._count_tokens", return_value=0), \
              patch("eval.redis_store.r", mock_redis):
             from proxy.callback import RagasLogger
             logger = RagasLogger()
@@ -413,12 +427,13 @@ class TestLogSessionSwitch:
         mock_redis.lpush.assert_not_called()
         mock_redis.hset.assert_not_called()
 
-    def test_hot_zone_computed_from_messages(self):
+    def test_hot_zone_tokens_computed(self):
         """hot_zone_tokens is computed from messages via _count_tokens."""
         mock_redis = MagicMock()
         mock_redis.hgetall.return_value = {}
 
-        with patch("proxy.skill_injector._count_tokens") as mock_ct, \
+        with mock_headroom_compress(), \
+             patch("proxy.skill_injector._count_tokens") as mock_ct, \
              patch("eval.redis_store.r", mock_redis):
             mock_ct.return_value = 1700
             from proxy.callback import RagasLogger
@@ -427,8 +442,90 @@ class TestLogSessionSwitch:
 
         event = json.loads(mock_redis.lpush.call_args[0][1])
         assert event["hot_zone_tokens"] > 0
-        # _count_tokens called for system + user message
-        assert mock_ct.call_count >= 2
+
+    def test_event_has_new_fields(self):
+        """Event dict contains hot_zone_hash and total_prompt_tokens."""
+        mock_redis = MagicMock()
+        mock_redis.hgetall.return_value = {}
+
+        with mock_headroom_compress(), \
+             patch("eval.redis_store.r", mock_redis):
+            from proxy.callback import RagasLogger
+            logger = RagasLogger()
+            kwargs = self.make_kwargs(model="deepseek-pro", session_header="sess-hash")
+            logger._log_session_switch(kwargs, total_prompt_tokens=15200)
+
+        event = json.loads(mock_redis.lpush.call_args[0][1])
+        assert "hot_zone_hash" in event, f"Missing hot_zone_hash in event: {event}"
+        assert "total_prompt_tokens" in event, f"Missing total_prompt_tokens in event: {event}"
+        assert isinstance(event["hot_zone_hash"], str)
+        assert len(event["hot_zone_hash"]) == 8
+        assert event["total_prompt_tokens"] == 15200
+
+    def test_hot_zone_hash_stable(self):
+        """Same messages produce same hash."""
+        mock_redis = MagicMock()
+        mock_redis.hgetall.return_value = {}
+
+        with mock_headroom_compress(), \
+             patch("eval.redis_store.r", mock_redis):
+            from proxy.callback import RagasLogger
+            logger = RagasLogger()
+            kwargs1 = self.make_kwargs(model="deepseek-pro", messages=[
+                {"role": "system", "content": "You are helpful."},
+                {"role": "user", "content": "Hello"},
+            ])
+            kwargs2 = self.make_kwargs(model="deepseek-pro", messages=[
+                {"role": "system", "content": "You are helpful."},
+                {"role": "user", "content": "Hello"},
+            ])
+            logger._log_session_switch(kwargs1)
+            logger._log_session_switch(kwargs2)
+
+        event1 = json.loads(mock_redis.lpush.call_args_list[0][0][1])
+        event2 = json.loads(mock_redis.lpush.call_args_list[1][0][1])
+        assert event1["hot_zone_hash"] == event2["hot_zone_hash"]
+
+    def test_hot_zone_hash_different(self):
+        """Different system prompts produce different hashes."""
+        mock_redis = MagicMock()
+        mock_redis.hgetall.return_value = {}
+
+        with mock_headroom_compress(), \
+             patch("eval.redis_store.r", mock_redis):
+            from proxy.callback import RagasLogger
+            logger = RagasLogger()
+            k1 = self.make_kwargs(messages=[
+                {"role": "system", "content": "You are helpful."},
+                {"role": "user", "content": "Hello"},
+            ])
+            k2 = self.make_kwargs(messages=[
+                {"role": "system", "content": "You are NOT helpful."},
+                {"role": "user", "content": "Hello"},
+            ])
+            logger._log_session_switch(k1)
+            logger._log_session_switch(k2)
+
+        event1 = json.loads(mock_redis.lpush.call_args_list[0][0][1])
+        event2 = json.loads(mock_redis.lpush.call_args_list[1][0][1])
+        assert event1["hot_zone_hash"] != event2["hot_zone_hash"]
+
+    def test_hot_zone_tokens_compressed(self):
+        """hot_zone_tokens > 0 and hot_zone_hash present when _count_tokens patched."""
+        mock_redis = MagicMock()
+        mock_redis.hgetall.return_value = {}
+
+        with mock_headroom_compress(), \
+             patch("proxy.skill_injector._count_tokens") as mock_ct, \
+             patch("eval.redis_store.r", mock_redis):
+            mock_ct.return_value = 1700
+            from proxy.callback import RagasLogger
+            logger = RagasLogger()
+            logger._log_session_switch(self.make_kwargs())
+
+        event = json.loads(mock_redis.lpush.call_args[0][1])
+        assert event["hot_zone_tokens"] > 0
+        assert "hot_zone_hash" in event
 
 
 """Integration tests — require Docker (gateway + Redis running)."""
@@ -453,7 +550,7 @@ def redis_client():
 class TestIntegrationSessionSwitchLogging:
     """End-to-end: make real requests through the gateway and verify Redis."""
 
-    def test_session_logging_writes_to_redis(self, redis_client):
+    def test_two_requests_same_system(self, redis_client):
         """Two requests with same system prompt create session list with 2 events."""
         import httpx
 
