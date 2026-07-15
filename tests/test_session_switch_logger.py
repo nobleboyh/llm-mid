@@ -613,13 +613,21 @@ class TestIntegrationSessionSwitchLogging:
         events = [json.loads(e) for e in events_raw]
         events.reverse()  # LPUSH → newest first, reverse to chronological
 
-        # Both events should have model, timestamp, hot_zone
+        # Both events should have all required fields
         for e in events:
             assert "model" in e
             assert "timestamp" in e
             assert "hot_zone_tokens" in e
+            assert "hot_zone_hash" in e  # NEW
+            assert "total_prompt_tokens" in e  # NEW
             assert "seconds_since_last" in e
             assert "previous_model" in e
+        # Verify new field types
+        for e in events:
+            assert isinstance(e["hot_zone_hash"], str), f"hot_zone_hash not str: {e['hot_zone_hash']}"
+            assert len(e["hot_zone_hash"]) == 8, f"hot_zone_hash length != 8: {e['hot_zone_hash']}"
+            assert isinstance(e["total_prompt_tokens"], (int, float)), \
+                f"total_prompt_tokens not numeric: {e['total_prompt_tokens']}"
 
         # Second event should reference the first model
         assert events[1]["previous_model"] == events[0]["model"]
