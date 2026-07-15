@@ -269,3 +269,165 @@ class TestComputeSecondsSince:
     def test_garbled_last_ts(self):
         now = datetime.datetime(2026, 7, 15, 14, 0, 0, tzinfo=datetime.timezone.utc)
         assert _compute_seconds_since("not-a-timestamp", now) is None
+
+
+import json
+from unittest.mock import MagicMock, patch
+
+from proxy.callback import SESSION_TTL, SESSION_DAYS_KEY
+
+
+class TestLogSessionSwitch:
+    """Test _log_session_switch via mocking Redis."""
+
+    def make_kwargs(self, model="deepseek-pro", session_header=None, messages=None):
+        """Build kwargs dict matching what LiteLLM passes to the callback."""
+        if messages is None:
+            messages = [
+                {"role": "system", "content": "You are helpful."},
+                {"role": "user", "content": "Hello"},
+            ]
+        headers = {}
+        if session_header:
+            headers["x-headroom-session-id"] = session_header
+        return {
+            "model": model,
+            "litellm_params": {
+                "proxy_server_request": {
+                    "headers": headers,
+                    "body": {"messages": messages, "tools": []},
+                },
+            },
+        }
+
+    def test_first_request_creates_session(self):
+        """First request for a session creates list, meta, and days index."""
+        mock_redis = MagicMock()
+        mock_redis.hget.return_value = None  # no previous state
+
+        with patch("proxy.callback.hot_zone_token_var") as mock_cv, \
+             patch("eval.redis_store.r", mock_redis):
+            mock_cv.get.return_value = 3400
+            from proxy.callback import RagasLogger
+            logger = RagasLogger()
+            logger._log_session_switch(self.make_kwargs(session_header="sess-1"))
+
+        # LPUSH called
+        mock_redis.lpush.assert_called_once()
+        list_key = mock_redis.lpush.call_args[0][0]
+        assert list_key.startswith("router:session:header:")
+        mock_redis.expire.assert_any_call(list_key, SESSION_TTL)
+
+        # Event JSON pushed
+        event = json.loads(mock_redis.lpush.call_args[0][1])
+        assert event["model"] == "deepseek-pro"
+        assert event["previous_model"] is None
+        assert event["seconds_since_last"] is None
+        assert event["hot_zone_tokens"] == 3400
+
+        # Meta hash set
+        meta_key = f"{list_key}:meta"
+        mock_redis.hset.assert_any_call(meta_key, mapping={
+            "latest_model": "deepseek-pro",
+            "latest_timestamp": event["timestamp"],
+        })
+        mock_redis.expire.assert_any_call(meta_key, SESSION_TTL)
+
+        # Days index (first request only)
+        mock_redis.zadd.assert_called_once()
+
+    def test_second_request_detects_switch(self):
+        """Second request with different model detects switch."""
+        mock_redis = MagicMock()
+        # Simulate previous state
+        mock_redis.hget.side_effect = lambda key, field: {
+            ("router:session:header:sess-1:meta", "latest_model"): "gemini-flash",
+            ("router:session:header:sess-1:meta", "latest_timestamp"): "2026-07-15T14:00:00+00:00",
+        }.get((key, field))
+
+        with patch("proxy.callback.hot_zone_token_var") as mock_cv, \
+             patch("eval.redis_store.r", mock_redis):
+            mock_cv.get.return_value = 3400
+            from proxy.callback import RagasLogger
+            logger = RagasLogger()
+            logger._log_session_switch(self.make_kwargs(
+                model="deepseek-pro",
+                session_header="sess-1",
+            ))
+
+        event = json.loads(mock_redis.lpush.call_args[0][1])
+        assert event["model"] == "deepseek-pro"
+        assert event["previous_model"] == "gemini-flash"
+        assert event["seconds_since_last"] is not None  # gap computed
+        assert event["hot_zone_tokens"] == 3400
+
+        # Meta updated
+        meta_key = "router:session:header:sess-1:meta"
+        mock_redis.hset.assert_called_with(meta_key, mapping={
+            "latest_model": "deepseek-pro",
+            "latest_timestamp": event["timestamp"],
+        })
+
+        # Days index NOT called (not first request)
+        mock_redis.zadd.assert_not_called()
+
+    def test_same_model_no_switch(self):
+        """Consecutive requests with same model show previous_model == current."""
+        mock_redis = MagicMock()
+        mock_redis.hget.side_effect = lambda key, field: {
+            ("router:session:header:sess-1:meta", "latest_model"): "gemini-flash",
+            ("router:session:header:sess-1:meta", "latest_timestamp"): "2026-07-15T14:00:00+00:00",
+        }.get((key, field))
+
+        with patch("proxy.callback.hot_zone_token_var") as mock_cv, \
+             patch("eval.redis_store.r", mock_redis):
+            mock_cv.get.return_value = 3400
+            from proxy.callback import RagasLogger
+            logger = RagasLogger()
+            logger._log_session_switch(self.make_kwargs(model="gemini-flash", session_header="sess-1"))
+
+        event = json.loads(mock_redis.lpush.call_args[0][1])
+        assert event["model"] == "gemini-flash"
+        assert event["previous_model"] == "gemini-flash"
+
+    def test_redis_failure_is_silent(self):
+        """Redis failure never raises."""
+        mock_redis = MagicMock()
+        mock_redis.hget.side_effect = ConnectionError("redis down")
+
+        with patch("proxy.callback.hot_zone_token_var") as mock_cv, \
+             patch("eval.redis_store.r", mock_redis):
+            mock_cv.get.return_value = 0
+            from proxy.callback import RagasLogger
+            logger = RagasLogger()
+            # Should not raise
+            logger._log_session_switch(self.make_kwargs())
+
+    def test_empty_fingerprint_skips(self):
+        """Empty fingerprint returns early, no Redis calls."""
+        mock_redis = MagicMock()
+
+        with patch("proxy.callback.hot_zone_token_var") as mock_cv:
+            mock_cv.get.return_value = 0
+            from proxy.callback import RagasLogger
+            logger = RagasLogger()
+            # No messages -> fingerprint returns ""
+            logger._log_session_switch({"litellm_params": {}})
+
+        mock_redis.lpush.assert_not_called()
+        mock_redis.hset.assert_not_called()
+
+    def test_zero_hot_zone_tokens(self):
+        """hot_zone_tokens is 0 when ContextVar default is returned."""
+        mock_redis = MagicMock()
+        mock_redis.hget.return_value = None
+
+        with patch("proxy.callback.hot_zone_token_var") as mock_cv, \
+             patch("eval.redis_store.r", mock_redis):
+            mock_cv.get.return_value = 0
+            from proxy.callback import RagasLogger
+            logger = RagasLogger()
+            logger._log_session_switch(self.make_kwargs())
+
+        event = json.loads(mock_redis.lpush.call_args[0][1])
+        assert event["hot_zone_tokens"] == 0

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import datetime
 import hashlib
+import json
 import logging
 import os
 import uuid
@@ -26,6 +27,10 @@ logger = logging.getLogger("proxy.callback")
 #   1. The model name starts with "ragas-eval" (configured in litellm_config.yaml).
 #   2. A special metadata flag _ragas_eval_call is set.
 _EVAL_MODEL_PREFIX = "ragas-eval"
+
+# ── Session switch tracking constants ─────────────────────────────────────────────
+SESSION_TTL = 14 * 24 * 3600  # 14 days
+SESSION_DAYS_KEY = "router:session:days"
 
 # ── Session fingerprint constants ────────────────────────────────────────────────
 _SESSION_HEADER_NAMES = (
@@ -113,6 +118,15 @@ def _compute_seconds_since(last_ts: str | None, now: datetime.datetime) -> float
         return (now - last_dt).total_seconds()
     except (ValueError, TypeError):
         return None
+
+
+# Lazy import — entrypoint.py pulls in headroom, which isn't available in
+# offline test environments.  Module-level reference lets tests patch
+# proxy.callback.hot_zone_token_var directly.
+try:
+    from proxy.entrypoint import hot_zone_token_var
+except ImportError:
+    hot_zone_token_var = None  # type: ignore[assignment]
 
 
 class RagasLogger(CustomLogger):
@@ -294,6 +308,56 @@ class RagasLogger(CustomLogger):
             enqueue_call_record(record)
         except Exception:
             logger.exception("Failed to enqueue call record")
+
+    def _log_session_switch(self, kwargs: dict) -> None:
+        """Log model choice per session for cache-miss impact measurement.
+
+        Fire-and-forget — Redis writes are best-effort, never block the
+        response.  Session identity comes from _session_fingerprint
+        (Method A: client header -> Method B: structural hash).
+        """
+        try:
+            from eval.redis_store import r as redis_client
+
+            session_key = _session_fingerprint(kwargs)
+            if not session_key:
+                return
+
+            model = kwargs.get("model", "unknown")
+            hot_zone = hot_zone_token_var.get()
+
+            meta_key = f"router:session:{session_key}:meta"
+            last_model = redis_client.hget(meta_key, "latest_model")
+            last_ts = redis_client.hget(meta_key, "latest_timestamp")
+
+            now = datetime.datetime.now(datetime.timezone.utc)
+            now_iso = now.isoformat()
+            gap = _compute_seconds_since(last_ts, now)
+
+            event = {
+                "timestamp": now_iso,
+                "model": model,
+                "previous_model": last_model or None,
+                "seconds_since_last": round(gap, 1) if gap is not None else None,
+                "hot_zone_tokens": hot_zone,
+            }
+
+            list_key = f"router:session:{session_key}"
+            redis_client.lpush(list_key, json.dumps(event))
+            redis_client.expire(list_key, SESSION_TTL)
+
+            redis_client.hset(meta_key, mapping={
+                "latest_model": model,
+                "latest_timestamp": now_iso,
+            })
+            redis_client.expire(meta_key, SESSION_TTL)
+
+            if last_model is None:
+                redis_client.hset(meta_key, "created_at", now_iso)
+                redis_client.zadd(SESSION_DAYS_KEY, {now_iso[:10]: now.timestamp()})
+
+        except Exception:
+            pass  # fire-and-forget — never block the response
 
     async def async_log_success_event(self, kwargs, response_obj, start_time, end_time):
         """Async hook for all requests (streaming + non-streaming).
