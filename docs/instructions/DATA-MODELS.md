@@ -197,3 +197,66 @@ Hydration converts back:
 - `int(float(str_val))` for integer fields
 - `float(str_val)` for float fields
 - `json.loads(str_val)` for JSON fields
+
+## Router session-switch data layout
+
+### Session event log: `router:session:{session_key}`
+
+```
+Type: List
+Direction: LPUSH (newest first) / LRANGE (read all)
+TTL: 14 days (refreshed on each write)
+```
+
+**Event record format** (each List element is a JSON string):
+```json
+{
+  "timestamp": "2026-07-15T14:23:05.123456+00:00",
+  "model": "deepseek-pro",
+  "previous_model": "gemini-flash",
+  "seconds_since_last": 42.3,
+  "hot_zone_tokens": 3400
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `timestamp` | string | ISO 8601 UTC |
+| `model` | string | Model chosen by the router for this request |
+| `previous_model` | string or null | Model chosen for the previous request in this session |
+| `seconds_since_last` | float or null | Seconds since previous request (null for first) |
+| `hot_zone_tokens` | int | Headroom-estimated hot-zone token count |
+
+### Session metadata: `router:session:{session_key}:meta`
+
+```
+Type: Hash
+TTL: 14 days (refreshed on each write)
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `latest_model` | string | Most recent model chosen |
+| `latest_timestamp` | string | ISO timestamp of most recent event |
+| `created_at` | string | ISO timestamp of first event |
+
+### Day index: `router:session:days`
+
+```
+Type: ZSet
+Score: Unix timestamp
+Member: "YYYY-MM-DD"
+TTL: None (lightweight index)
+```
+
+### Session fingerprint methods
+
+1. **Method A** — Client-supplied session headers checked in order:
+   - `x-headroom-session-id`
+   - `x-session-id`
+   - `x-conversation-id`
+   If found, session key is `header:<value>`.
+
+2. **Method B** — Structural fingerprint (fallback):
+   `sha256(system_prompt[:500] + first_user_message[:500] + sorted(tool_names))[:16]`
+   Session key is `fp:<16-char-hex>`.
