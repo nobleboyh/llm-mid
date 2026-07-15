@@ -303,7 +303,7 @@ class RagasLogger(CustomLogger):
             logger.exception("Failed to enqueue call record")
 
         # ── Log session model choice for cache-miss measurement ────────────
-        self._log_session_switch(kwargs)
+        self._log_session_switch(kwargs, total_prompt_tokens=usage.get("prompt_tokens", 0))
 
     def _log_session_switch(self, kwargs: dict, total_prompt_tokens: int = 0) -> None:
         """Log model choice per session for cache-miss impact measurement.
