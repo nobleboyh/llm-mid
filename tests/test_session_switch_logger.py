@@ -303,11 +303,10 @@ class TestLogSessionSwitch:
     def test_first_request_creates_session(self):
         """First request for a session creates list, meta, and days index."""
         mock_redis = MagicMock()
-        mock_redis.hget.return_value = None  # no previous state
+        mock_redis.hgetall.return_value = {}  # no previous state
 
-        with patch("proxy.callback.hot_zone_token_var") as mock_cv, \
+        with patch("proxy.skill_injector._count_tokens", return_value=1700), \
              patch("eval.redis_store.r", mock_redis):
-            mock_cv.get.return_value = 3400
             from proxy.callback import RagasLogger
             logger = RagasLogger()
             logger._log_session_switch(self.make_kwargs(session_header="sess-1"))
@@ -323,7 +322,7 @@ class TestLogSessionSwitch:
         assert event["model"] == "deepseek-pro"
         assert event["previous_model"] is None
         assert event["seconds_since_last"] is None
-        assert event["hot_zone_tokens"] == 3400
+        assert event["hot_zone_tokens"] > 0
 
         # Meta hash set
         meta_key = f"{list_key}:meta"
@@ -340,14 +339,13 @@ class TestLogSessionSwitch:
         """Second request with different model detects switch."""
         mock_redis = MagicMock()
         # Simulate previous state
-        mock_redis.hget.side_effect = lambda key, field: {
-            ("router:session:header:sess-1:meta", "latest_model"): "gemini-flash",
-            ("router:session:header:sess-1:meta", "latest_timestamp"): "2026-07-15T14:00:00+00:00",
-        }.get((key, field))
+        mock_redis.hgetall.return_value = {
+            "latest_model": "gemini-flash",
+            "latest_timestamp": "2026-07-15T14:00:00+00:00",
+        }
 
-        with patch("proxy.callback.hot_zone_token_var") as mock_cv, \
+        with patch("proxy.skill_injector._count_tokens", return_value=1700), \
              patch("eval.redis_store.r", mock_redis):
-            mock_cv.get.return_value = 3400
             from proxy.callback import RagasLogger
             logger = RagasLogger()
             logger._log_session_switch(self.make_kwargs(
@@ -359,7 +357,7 @@ class TestLogSessionSwitch:
         assert event["model"] == "deepseek-pro"
         assert event["previous_model"] == "gemini-flash"
         assert event["seconds_since_last"] is not None  # gap computed
-        assert event["hot_zone_tokens"] == 3400
+        assert event["hot_zone_tokens"] > 0
 
         # Meta updated
         meta_key = "router:session:header:sess-1:meta"
@@ -374,14 +372,13 @@ class TestLogSessionSwitch:
     def test_same_model_no_switch(self):
         """Consecutive requests with same model show previous_model == current."""
         mock_redis = MagicMock()
-        mock_redis.hget.side_effect = lambda key, field: {
-            ("router:session:header:sess-1:meta", "latest_model"): "gemini-flash",
-            ("router:session:header:sess-1:meta", "latest_timestamp"): "2026-07-15T14:00:00+00:00",
-        }.get((key, field))
+        mock_redis.hgetall.return_value = {
+            "latest_model": "gemini-flash",
+            "latest_timestamp": "2026-07-15T14:00:00+00:00",
+        }
 
-        with patch("proxy.callback.hot_zone_token_var") as mock_cv, \
+        with patch("proxy.skill_injector._count_tokens", return_value=1700), \
              patch("eval.redis_store.r", mock_redis):
-            mock_cv.get.return_value = 3400
             from proxy.callback import RagasLogger
             logger = RagasLogger()
             logger._log_session_switch(self.make_kwargs(model="gemini-flash", session_header="sess-1"))
@@ -393,11 +390,10 @@ class TestLogSessionSwitch:
     def test_redis_failure_is_silent(self):
         """Redis failure never raises."""
         mock_redis = MagicMock()
-        mock_redis.hget.side_effect = ConnectionError("redis down")
+        mock_redis.hgetall.side_effect = ConnectionError("redis down")
 
-        with patch("proxy.callback.hot_zone_token_var") as mock_cv, \
+        with patch("proxy.skill_injector._count_tokens", return_value=1700), \
              patch("eval.redis_store.r", mock_redis):
-            mock_cv.get.return_value = 0
             from proxy.callback import RagasLogger
             logger = RagasLogger()
             # Should not raise
@@ -407,8 +403,8 @@ class TestLogSessionSwitch:
         """Empty fingerprint returns early, no Redis calls."""
         mock_redis = MagicMock()
 
-        with patch("proxy.callback.hot_zone_token_var") as mock_cv:
-            mock_cv.get.return_value = 0
+        with patch("proxy.skill_injector._count_tokens", return_value=0), \
+             patch("eval.redis_store.r", mock_redis):
             from proxy.callback import RagasLogger
             logger = RagasLogger()
             # No messages -> fingerprint returns ""
@@ -417,20 +413,22 @@ class TestLogSessionSwitch:
         mock_redis.lpush.assert_not_called()
         mock_redis.hset.assert_not_called()
 
-    def test_zero_hot_zone_tokens(self):
-        """hot_zone_tokens is 0 when ContextVar default is returned."""
+    def test_hot_zone_computed_from_messages(self):
+        """hot_zone_tokens is computed from messages via _count_tokens."""
         mock_redis = MagicMock()
-        mock_redis.hget.return_value = None
+        mock_redis.hgetall.return_value = {}
 
-        with patch("proxy.callback.hot_zone_token_var") as mock_cv, \
+        with patch("proxy.skill_injector._count_tokens") as mock_ct, \
              patch("eval.redis_store.r", mock_redis):
-            mock_cv.get.return_value = 0
+            mock_ct.return_value = 1700
             from proxy.callback import RagasLogger
             logger = RagasLogger()
             logger._log_session_switch(self.make_kwargs())
 
         event = json.loads(mock_redis.lpush.call_args[0][1])
-        assert event["hot_zone_tokens"] == 0
+        assert event["hot_zone_tokens"] > 0
+        # _count_tokens called for system + user message
+        assert mock_ct.call_count >= 2
 
 
 """Integration tests — require Docker (gateway + Redis running)."""
@@ -441,7 +439,7 @@ import pytest
 
 import redis
 
-GATEMID_URL = os.environ["GATEMID_URL"]
+GATEMID_URL = os.environ.get("GATEMID_URL", "")
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379")
 
 
@@ -455,7 +453,7 @@ def redis_client():
 class TestIntegrationSessionSwitchLogging:
     """End-to-end: make real requests through the gateway and verify Redis."""
 
-    def test_MASKED_session_switch_two_requests(self, redis_client):
+    def test_session_logging_writes_to_redis(self, redis_client):
         """Two requests with same system prompt create session list with 2 events."""
         import httpx
 

@@ -120,13 +120,6 @@ def _compute_seconds_since(last_ts: str | None, now: datetime.datetime) -> float
         return None
 
 
-# Lazy import — entrypoint.py pulls in headroom, which isn't available in
-# offline test environments.  Module-level reference lets tests patch
-# proxy.callback.hot_zone_token_var directly.
-try:
-    from proxy.entrypoint import hot_zone_token_var
-except ImportError:
-    hot_zone_token_var = None  # type: ignore[assignment]
 
 
 class RagasLogger(CustomLogger):
@@ -318,20 +311,37 @@ class RagasLogger(CustomLogger):
         Fire-and-forget — Redis writes are best-effort, never block the
         response.  Session identity comes from _session_fingerprint
         (Method A: client header -> Method B: structural hash).
+
+        Hot-zone token estimate is computed inline from the original
+        messages (same approach as _patched_compress) because ContextVars
+        do not propagate across the ASGI -> callback thread boundary.
         """
         try:
             from eval.redis_store import r as redis_client
+            from proxy.skill_injector import _count_tokens
 
             session_key = _session_fingerprint(kwargs)
             if not session_key:
                 return
 
             model = kwargs.get("model", "unknown")
-            hot_zone = hot_zone_token_var.get()
+
+            # Estimate hot-zone tokens inline — ContextVar doesn't cross
+            # the ASGI -> callback thread boundary (same issue as
+            # original_question_var fallback at log_success_event ~L74).
+            psr = (kwargs.get("litellm_params") or {}).get("proxy_server_request") or {}
+            body = psr.get("body") or {}
+            messages = body.get("messages", [])
+            sys_text = _first_system_content(messages)
+            user_text = _first_user_content(messages)
+            hot_zone = _count_tokens(sys_text)
+            if user_text:
+                hot_zone += _count_tokens(user_text)
 
             meta_key = f"router:session:{session_key}:meta"
-            last_model = redis_client.hget(meta_key, "latest_model")
-            last_ts = redis_client.hget(meta_key, "latest_timestamp")
+            meta = redis_client.hgetall(meta_key) or {}
+            last_model = meta.get("latest_model")
+            last_ts = meta.get("latest_timestamp")
 
             now = datetime.datetime.now(datetime.timezone.utc)
             now_iso = now.isoformat()
@@ -360,7 +370,7 @@ class RagasLogger(CustomLogger):
                 redis_client.zadd(SESSION_DAYS_KEY, {now_iso[:10]: now.timestamp()})
 
         except Exception:
-            pass  # fire-and-forget — never block the response
+            logger.exception("_log_session_switch — Redis write failed")
 
     async def async_log_success_event(self, kwargs, response_obj, start_time, end_time):
         """Async hook for all requests (streaming + non-streaming).
