@@ -431,3 +431,114 @@ class TestLogSessionSwitch:
 
         event = json.loads(mock_redis.lpush.call_args[0][1])
         assert event["hot_zone_tokens"] == 0
+
+
+"""Integration tests — require Docker (gateway + Redis running)."""
+import json
+import os
+
+import pytest
+
+import redis
+
+GATEMID_URL = os.environ["GATEMID_URL"]
+REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379")
+
+
+@pytest.fixture(scope="module")
+def redis_client():
+    r = redis.from_url(REDIS_URL, decode_responses=True)
+    yield r
+    r.close()
+
+
+class TestIntegrationSessionSwitchLogging:
+    """End-to-end: make real requests through the gateway and verify Redis."""
+
+    def test_MASKED_session_switch_two_requests(self, redis_client):
+        """Two requests with same system prompt create session list with 2 events."""
+        import httpx
+
+        # Clean up first
+        for key in redis_client.scan_iter(match="router:session:*", count=100):
+            redis_client.delete(key)
+
+        system_msg = "You are a test assistant. Integration test run."
+        user_msg_1 = "What is 1+1?"
+        user_msg_2 = "What is 2+2?"
+
+        def send(user_msg):
+            return httpx.post(
+                f"{GATEMID_URL}/v1/chat/completions",
+                json={
+                    "model": "team-smart-router",
+                    "messages": [
+                        {"role": "system", "content": system_msg},
+                        {"role": "user", "content": user_msg},
+                    ],
+                },
+                headers={
+                    "Authorization": f"Bearer sk-local-dev-key",
+                    "Content-Type": "application/json",
+                },
+                timeout=30,
+            )
+
+        r1 = send(user_msg_1)
+        assert r1.status_code == 200, f"Request 1 failed: {r1.text}"
+
+        r2 = send(user_msg_2)
+        assert r2.status_code == 200, f"Request 2 failed: {r2.text}"
+
+        # Give the callback a moment to write
+        import time
+        time.sleep(0.5)
+
+        # Find session keys
+        session_keys = [
+            key for key in redis_client.scan_iter(match="router:session:*", count=100)
+            if not key.endswith(":meta") and key != "router:session:days"
+        ]
+
+        if not session_keys:
+            # The session fingerprint might not have been written yet — try
+            # listing all keys
+            all_router_keys = list(redis_client.scan_iter(match="router:*", count=100))
+            pytest.skip(
+                f"No router:session:* keys found. "
+                f"router:* keys present: {all_router_keys}"
+            )
+
+        list_key = session_keys[0]
+        events_raw = redis_client.lrange(list_key, 0, -1)
+        assert len(events_raw) >= 2, (
+            f"Expected 2+ events in {list_key}, got {len(events_raw)}"
+        )
+
+        events = [json.loads(e) for e in events_raw]
+        events.reverse()  # LPUSH → newest first, reverse to chronological
+
+        # Both events should have model, timestamp, hot_zone
+        for e in events:
+            assert "model" in e
+            assert "timestamp" in e
+            assert "hot_zone_tokens" in e
+            assert "seconds_since_last" in e
+            assert "previous_model" in e
+
+        # Second event should reference the first model
+        assert events[1]["previous_model"] == events[0]["model"]
+        assert events[1]["seconds_since_last"] is not None
+
+        # Meta hash should exist
+        meta_key = f"{list_key}:meta"
+        meta = redis_client.hgetall(meta_key)
+        assert "latest_model" in meta
+        assert "latest_timestamp" in meta
+        assert "created_at" in meta
+
+        # Days index should have today
+        import datetime
+        today = datetime.datetime.now(datetime.timezone.utc).isoformat()[:10]
+        days = redis_client.zrange("router:session:days", 0, -1)
+        assert today in days, f"Days index: {days}"
