@@ -3,6 +3,7 @@
 LiteLLM doesn't have a --startup_file flag, so we do middleware registration
 in-process before handing off to the normal server launch.
 """
+import contextvars
 import logging
 import sys
 
@@ -40,6 +41,11 @@ for name in (
     "eval.redis_store",
 ):
     _setup_logger(name)
+
+# ── Hot-zone token estimate — set by _patched_compress, read by callback ─────
+hot_zone_token_var: contextvars.ContextVar[int] = contextvars.ContextVar(
+    "hot_zone_tokens", default=0,
+)
 
 logger = logging.getLogger("headroom.startup")
 
@@ -80,6 +86,31 @@ def _patched_compress(messages, model="claude-sonnet-4-5-20250929",
         messages=messages, model=model, model_limit=model_limit,
         optimize=optimize, hooks=hooks, config=config, **kwargs,
     )
+
+    # ── Estimate hot-zone tokens for session-switch logging ───────────────
+    try:
+        from proxy.skill_injector import _count_tokens
+
+        def _first_text(messages, role):
+            for msg in messages:
+                if isinstance(msg, dict) and msg.get("role") == role:
+                    c = msg.get("content", "")
+                    if isinstance(c, list):
+                        return " ".join(
+                            b.get("text", "") for b in c
+                            if isinstance(b, dict) and b.get("type") == "text"
+                        )
+                    return str(c)
+            return ""
+
+        system_text = _first_text(messages, "system")
+        user_text = _first_text(messages, "user")
+        hot = _count_tokens(system_text)
+        if user_text:
+            hot += _count_tokens(user_text)
+        hot_zone_token_var.set(hot)
+    except Exception:
+        pass  # must never block compression
 
     # ── Store compression result in Redis (fire-and-forget) ──────────────
     if result and result.tokens_saved > 0:
