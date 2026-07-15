@@ -7,7 +7,10 @@ runs Ragas scoring, and writes results back to Redis.
 Zero impact on response latency — the callback only does a Redis RPUSH.
 """
 
+from __future__ import annotations
+
 import datetime
+import hashlib
 import logging
 import os
 import uuid
@@ -23,6 +26,93 @@ logger = logging.getLogger("proxy.callback")
 #   1. The model name starts with "ragas-eval" (configured in litellm_config.yaml).
 #   2. A special metadata flag _ragas_eval_call is set.
 _EVAL_MODEL_PREFIX = "ragas-eval"
+
+# ── Session fingerprint constants ────────────────────────────────────────────────
+_SESSION_HEADER_NAMES = (
+    "x-headroom-session-id",
+    "x-session-id",
+    "x-conversation-id",
+)
+
+
+def _first_system_content(messages: list[dict]) -> str:
+    """Return the first system message content as a string."""
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        if msg.get("role") == "system":
+            content = msg.get("content", "")
+            if isinstance(content, list):
+                return " ".join(
+                    b.get("text", "") for b in content
+                    if isinstance(b, dict) and b.get("type") == "text"
+                )
+            return str(content)
+    return ""
+
+
+def _first_user_content(messages: list[dict]) -> str:
+    """Return the first user message content as a string."""
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        if msg.get("role") == "user":
+            content = msg.get("content", "")
+            if isinstance(content, list):
+                return " ".join(
+                    b.get("text", "") for b in content
+                    if isinstance(b, dict) and b.get("type") == "text"
+                )
+            return str(content)
+    return ""
+
+
+def _session_fingerprint(kwargs: dict) -> str:
+    """Compute a stable session identifier from request kwargs.
+
+    Method A — check for client-supplied session/conversation header.
+    Method B — structural fingerprint from system prompt + first user
+               message + tool names (model-independent).
+    """
+    psr = (kwargs.get("litellm_params") or {}).get("proxy_server_request") or {}
+
+    # Method A: check for existing session headers
+    headers = psr.get("headers") or {}
+    for name in _SESSION_HEADER_NAMES:
+        val = headers.get(name)
+        if val:
+            return f"header:{val}"
+
+    # Method B: structural fingerprint
+    body = psr.get("body") or {}
+    messages = body.get("messages", [])
+    system = _first_system_content(messages)[:500]
+    first_user = _first_user_content(messages)[:500]
+
+    if not system and not first_user:
+        return ""
+
+    tools = body.get("tools", [])
+    tool_names = "".join(
+        sorted(
+            t.get("name", "") for t in tools
+            if isinstance(t, dict) and t.get("name")
+        )
+    )
+
+    raw = system + first_user + tool_names
+    return f"fp:{hashlib.sha256(raw.encode()).hexdigest()[:16]}"
+
+
+def _compute_seconds_since(last_ts: str | None, now: datetime.datetime) -> float | None:
+    """Return seconds between *last_ts* (ISO string) and *now*, or None."""
+    if not last_ts:
+        return None
+    try:
+        last_dt = datetime.datetime.fromisoformat(last_ts)
+        return (now - last_dt).total_seconds()
+    except (ValueError, TypeError):
+        return None
 
 
 class RagasLogger(CustomLogger):
