@@ -89,6 +89,8 @@ def _format_cache_cell(prev_hash: str | None, curr_hash: str, gap: float | None)
     """
     if prev_hash is None:
         return curr_hash, "—"
+    if not prev_hash and not curr_hash:
+        return "", "—"  # old events without hash field
     if curr_hash != prev_hash:
         return curr_hash, "✗"
     if gap is not None and gap > CACHE_TTL_SECONDS:
@@ -174,15 +176,18 @@ def _load_sessions(day_strs: list[str]) -> list[dict]:
                     })
 
             # ── Cache-OK percentage ────────────────────────────────────────
-            cache_ok_count = 0
-            prev_h: str | None = None
-            for ev in events:
-                h = ev.get("hot_zone_hash", "")
-                g = ev.get("seconds_since_last")
-                if prev_h is not None and h == prev_h and g is not None and g <= CACHE_TTL_SECONDS:
-                    cache_ok_count += 1
-                prev_h = h
-            cache_ok_pct = cache_ok_count / max(1, len(events) - 1) * 100
+            if len(events) < 2:
+                cache_ok_pct = None  # single-event session — no comparison possible
+            else:
+                cache_ok_count = 0
+                prev_h: str | None = None
+                for ev in events:
+                    h = ev.get("hot_zone_hash", "")
+                    g = ev.get("seconds_since_last")
+                    if prev_h is not None and h and h == prev_h and g is not None and g <= CACHE_TTL_SECONDS:
+                        cache_ok_count += 1
+                    prev_h = h
+                cache_ok_pct = cache_ok_count / (len(events) - 1) * 100
 
             sessions.append({
                 "session_key": session_key,
@@ -270,9 +275,12 @@ def _render_sessions_overview(
         models = _session_models_display(s["model_sequence"])
         row.append(f" {models:<42}", style=style)
         row.append(f"{s['event_count']:>6}", style=style)
-        cache_ok = s.get("cache_ok_pct", 0)
-        cache_ok_style = f"bold green {style}" if cache_ok >= 80 else f"yellow {style}" if cache_ok > 0 else f"dim {style}"
-        row.append(f"{cache_ok:>4.0f}%", style=cache_ok_style)
+        cache_ok = s.get("cache_ok_pct")
+        if cache_ok is None:
+            row.append(f"{'  —':>5}", style=f"dim {style}")
+        else:
+            cache_ok_style = f"bold green {style}" if cache_ok >= 80 else f"yellow {style}" if cache_ok > 0 else f"dim {style}"
+            row.append(f"{cache_ok:>4.0f}%", style=cache_ok_style)
         cost_style = f"bold yellow {style}" if s["total_cost"] > 0 else f"dim {style}"
         row.append(f"${s['total_cost']:>7.2f}", style=cost_style)
         lines.append(row)
