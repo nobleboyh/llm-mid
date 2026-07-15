@@ -160,7 +160,7 @@ def _load_sessions(day_strs: list[str]) -> list[dict]:
             })
         if cursor == 0:
             break
-    sessions.sort(key=lambda s: s["switch_count"], reverse=True)
+    sessions.sort(key=lambda s: s["last_ts"], reverse=True)
     return sessions
 
 
