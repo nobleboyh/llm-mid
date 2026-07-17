@@ -539,6 +539,10 @@ def redis_client():
     r.close()
 
 
+@pytest.mark.skipif(
+    not GATEMID_URL,
+    reason="GATEMID_URL not set — gateway not running",
+)
 class TestIntegrationSessionSwitchLogging:
     """End-to-end: make real requests through the gateway and verify Redis."""
 
