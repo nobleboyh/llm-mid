@@ -78,32 +78,39 @@ def _fmt_pct(ratio: float) -> str:
     return f"{ratio * 100:.1f}%"
 
 
-def _format_cache_cell(prev_hash: str | None, curr_hash: str, gap: float | None) -> tuple[str, str]:
-    """Return (hash_display, status_icon) for the Cache Hash column.
+def _cache_status(read_tokens: int, created_tokens: int) -> tuple[str, str]:
+    """Return (icon, style_name) for a single event's cache status.
 
-    Status icons:
-        ✓  — Cache intact (hash matches previous + within TTL)
-        ✗  — Content changed (hash differs)
-        ⏱ — TTL expired (hash matches but gap > TTL)
-        —  — First event in session (no baseline)
+    ✓ green   — Cache hit (provider returned cache_read > 0)
+    ∆ yellow  — Cache written (no read, but new entry created)
+    ✗ red     — Cold miss (no cache read or write)
+    — dim     — No cache data available
     """
-    if prev_hash is None:
-        return curr_hash, "—"
-    if not prev_hash and not curr_hash:
-        return "", "—"  # old events without hash field
-    if curr_hash != prev_hash:
-        return curr_hash, "✗"
-    if gap is not None and gap > CACHE_TTL_SECONDS:
-        return curr_hash, "⏱"
-    return curr_hash, "✓"
+    if read_tokens > 0:
+        return "✓", "green"
+    if created_tokens > 0:
+        return "∆", "yellow"
+    return "✗", "red"
 
 
-def _fmt_pct_cached(hot_zone: int, total: int) -> str:
-    """Format % cached, or '—' if no data."""
-    if total <= 0:
+def _fmt_cache_pct(numerator: int, denominator: int) -> str:
+    """Format a cache percentage, or '—' if no data."""
+    if denominator <= 0:
         return "—"
-    pct = hot_zone / total * 100
+    pct = numerator / denominator * 100
     return f"{pct:.1f}%"
+
+
+def _cache_display(numerator: int, denominator: int) -> tuple[str, str]:
+    """Return (display_str, style_name) for a cache percentage column."""
+    if denominator <= 0:
+        return "—", "dim"
+    pct = numerator / denominator * 100
+    if not numerator:
+        return "0%", "dim"
+    if pct > 50:
+        return f"{pct:.1f}%", "bold green"
+    return f"{pct:.1f}%", "yellow"
 
 
 def _price_key(model_name: str) -> str | None:
@@ -175,19 +182,13 @@ def _load_sessions(day_strs: list[str]) -> list[dict]:
                         "cost": cost,
                     })
 
-            # ── Cache-OK percentage ────────────────────────────────────────
-            if len(events) < 2:
-                cache_ok_pct = None  # single-event session — no comparison possible
-            else:
-                cache_ok_count = 0
-                prev_h: str | None = None
-                for ev in events:
-                    h = ev.get("hot_zone_hash", "")
-                    g = ev.get("seconds_since_last")
-                    if prev_h is not None and h and h == prev_h and g is not None and g <= CACHE_TTL_SECONDS:
-                        cache_ok_count += 1
-                    prev_h = h
-                cache_ok_pct = cache_ok_count / (len(events) - 1) * 100
+            # ── Cache-hit percentage ────────────────────────────────────────
+            # % of events where the provider confirmed cache_read > 0.
+            cache_hit_count = sum(
+                1 for ev in events
+                if (ev.get("cache_read_input_tokens") or 0) > 0
+            )
+            cache_pct = cache_hit_count / max(1, len(events)) * 100
 
             sessions.append({
                 "session_key": session_key,
@@ -199,7 +200,7 @@ def _load_sessions(day_strs: list[str]) -> list[dict]:
                 "first_ts": events[0]["timestamp"],
                 "last_ts": events[-1]["timestamp"],
                 "event_count": len(events),
-                "cache_ok_pct": cache_ok_pct,
+                "cache_pct": cache_pct,
             })
         if cursor == 0:
             break
@@ -258,7 +259,7 @@ def _render_sessions_overview(
     col.append(f"{'Sw':>4}", style="bold underline")
     col.append(f" {'Models':<42}", style="bold underline")
     col.append(f"{'Events':>6}", style="bold underline")
-    col.append(f"{'C OK':>5}", style="bold underline")
+    col.append(f"{'Cach%':>6}", style="bold underline")
     col.append(f"{'Cost':>8}", style="bold underline")
     lines.append(col)
     lines.append(Text(""))
@@ -275,12 +276,9 @@ def _render_sessions_overview(
         models = _session_models_display(s["model_sequence"])
         row.append(f" {models:<42}", style=style)
         row.append(f"{s['event_count']:>6}", style=style)
-        cache_ok = s.get("cache_ok_pct")
-        if cache_ok is None:
-            row.append(f"{'  —':>5}", style=f"dim {style}")
-        else:
-            cache_ok_style = f"bold green {style}" if cache_ok >= 80 else f"yellow {style}" if cache_ok > 0 else f"dim {style}"
-            row.append(f"{cache_ok:>4.0f}%", style=cache_ok_style)
+        cache_pct = s.get("cache_pct", 0)
+        cache_style = f"bold green {style}" if cache_pct >= 80 else f"yellow {style}" if cache_pct > 0 else f"dim {style}"
+        row.append(f"{cache_pct:>5.0f}%", style=cache_style)
         cost_style = f"bold yellow {style}" if s["total_cost"] > 0 else f"dim {style}"
         row.append(f"${s['total_cost']:>7.2f}", style=cost_style)
         lines.append(row)
@@ -308,12 +306,12 @@ def _render_session_detail(session: dict) -> Panel:
     col.append("Model               ", style="bold underline")
     col.append("Prev Model          ", style="bold underline")
     col.append("Gap     ", style="bold underline")
-    col.append("Cache Hash", style="bold underline")
-    col.append("% Cached", style="bold underline")
+    col.append("Cache", style="bold underline")
+    col.append("Rd%    ", style="bold underline")
+    col.append("Wr%    ", style="bold underline")
     col.append("TTL?", style="bold underline")
     lines.append(col)
 
-    prev_hash: str | None = None
     for i, e in enumerate(session["events"]):
         ts = e["timestamp"]
         time_str = ts[11:19] if len(ts) >= 19 else ts
@@ -325,33 +323,13 @@ def _render_session_detail(session: dict) -> Panel:
         )
         within = "✓" if gap is not None and gap <= CACHE_TTL_SECONDS else "✗" if gap is not None else "—"
 
-        curr_hash = e.get("hot_zone_hash", "")
-        cache_display, cache_flag = _format_cache_cell(prev_hash, curr_hash, gap)
-        pct_str = _fmt_pct_cached(
-            e.get("hot_zone_tokens", 0),
-            e.get("total_prompt_tokens", 0),
-        )
+        read_tokens = e.get("cache_read_input_tokens", 0) or 0
+        created_tokens = e.get("cache_creation_input_tokens", 0) or 0
+        total_tokens = e.get("total_prompt_tokens", 0) or 0
 
-        # Cache status color
-        if cache_flag == "✓":
-            cache_color = "green"
-        elif cache_flag == "✗":
-            cache_color = "red"
-        elif cache_flag == "⏱":
-            cache_color = "yellow"
-        else:
-            cache_color = "dim"
-
-        # % Cached color
-        pct_value = e.get("hot_zone_tokens", 0) / max(1, e.get("total_prompt_tokens", 0)) * 100
-        if e.get("total_prompt_tokens", 0) <= 0:
-            pct_style = "dim"
-        elif pct_value > 50:
-            pct_style = "bold green"
-        elif pct_value > 20:
-            pct_style = "yellow"
-        else:
-            pct_style = "dim"
+        cache_icon, cache_color = _cache_status(read_tokens, created_tokens)
+        rd_str, rd_color = _cache_display(read_tokens, total_tokens)
+        wr_str, wr_color = _cache_display(created_tokens, total_tokens)
 
         row = Text()
         row.append(f"{i + 1:>3} ", style="dim")
@@ -359,11 +337,11 @@ def _render_session_detail(session: dict) -> Panel:
         row.append(f"{e['model']:<20}")
         row.append(f"{e.get('previous_model') or '—':<20}")
         row.append(f"{gap_str:<8}")
-        row.append(f"{cache_display:<8} {cache_flag:<2}", style=cache_color)
-        row.append(f"  {pct_str:>6}", style=pct_style)
+        row.append(f"{cache_icon:<6}", style=cache_color)
+        row.append(f" {rd_str:>6}", style=rd_color)
+        row.append(f" {wr_str:>6}", style=wr_color)
         row.append(f"   {within}")
         lines.append(row)
-        prev_hash = curr_hash
 
     if session["switch_pairs"]:
         lines.append(Text(""))

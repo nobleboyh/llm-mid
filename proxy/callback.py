@@ -240,17 +240,51 @@ class RagasLogger(CustomLogger):
                 answer = _extract_content(choice.delta.content)
 
         def _get_usage(response) -> dict:
-            """Extract usage stats from either a ModelResponse or raw dict."""
+            """Extract usage stats from either a ModelResponse or raw dict.
+
+            Returns prompt_tokens, completion_tokens, plus cache metrics:
+            cache_read_input_tokens and cache_creation_input_tokens.
+
+            For OpenAI / Gemini, cache_read_input_tokens is read from
+            prompt_tokens_details.cached_tokens if the top-level field is absent.
+            """
             if response is None:
                 return {}
             if hasattr(response, "usage"):
                 u = response.usage
-                return {"prompt_tokens": u.prompt_tokens or 0,
-                        "completion_tokens": u.completion_tokens or 0} if u else {}
+                if u is None:
+                    return {}
+                result = {"prompt_tokens": u.prompt_tokens or 0,
+                          "completion_tokens": u.completion_tokens or 0}
+                # Provider cache metrics (Anthropic top-level fields)
+                result["cache_read_input_tokens"] = (
+                    getattr(u, "cache_read_input_tokens", None) or 0
+                )
+                result["cache_creation_input_tokens"] = (
+                    getattr(u, "cache_creation_input_tokens", None) or 0
+                )
+                # OpenAI / Gemini fallback via prompt_tokens_details
+                if not result["cache_read_input_tokens"]:
+                    details = getattr(u, "prompt_tokens_details", None)
+                    if details:
+                        cached = getattr(details, "cached_tokens", None) or 0
+                        result["cache_read_input_tokens"] = cached
+                return result
             if isinstance(response, dict):
                 u = response.get("usage", {})
-                return {"prompt_tokens": u.get("prompt_tokens", 0) if isinstance(u, dict) else 0,
-                        "completion_tokens": u.get("completion_tokens", 0) if isinstance(u, dict) else 0}
+                if not isinstance(u, dict):
+                    return {}
+                result = {"prompt_tokens": u.get("prompt_tokens", 0),
+                          "completion_tokens": u.get("completion_tokens", 0)}
+                result["cache_read_input_tokens"] = u.get("cache_read_input_tokens", 0) or 0
+                result["cache_creation_input_tokens"] = u.get("cache_creation_input_tokens", 0) or 0
+                # OpenAI / Gemini fallback
+                if not result["cache_read_input_tokens"]:
+                    details = u.get("prompt_tokens_details", {})
+                    if isinstance(details, dict):
+                        cached = details.get("cached_tokens", 0) or 0
+                        result["cache_read_input_tokens"] = cached
+                return result
             return {}
 
         # Skip records with no original question — Headroom may have stripped
@@ -303,9 +337,16 @@ class RagasLogger(CustomLogger):
             logger.exception("Failed to enqueue call record")
 
         # ── Log session model choice for cache-miss measurement ────────────
-        self._log_session_switch(kwargs, total_prompt_tokens=usage.get("prompt_tokens", 0))
+        self._log_session_switch(
+            kwargs,
+            total_prompt_tokens=usage.get("prompt_tokens", 0),
+            cache_read_input_tokens=usage.get("cache_read_input_tokens", 0),
+            cache_creation_input_tokens=usage.get("cache_creation_input_tokens", 0),
+        )
 
-    def _log_session_switch(self, kwargs: dict, total_prompt_tokens: int = 0) -> None:
+    def _log_session_switch(self, kwargs: dict, total_prompt_tokens: int = 0,
+                             cache_read_input_tokens: int = 0,
+                             cache_creation_input_tokens: int = 0) -> None:
         """Log model choice per session for cache-miss impact measurement.
 
         Fire-and-forget — Redis writes are best-effort, never block the
@@ -331,30 +372,23 @@ class RagasLogger(CustomLogger):
 
             model = kwargs.get("model", "unknown")
 
-            # Read compressed messages from request body (middleware
+            # Read compressed messages from the request body (middleware
             # swapped them in-place before LiteLLM processed the request).
             psr = (kwargs.get("litellm_params") or {}).get("proxy_server_request") or {}
             body = psr.get("body") or {}
             messages = body.get("messages", [])  # COMPRESSED (or raw if no compression)
 
-            # Slice hot zone: everything except protect_recent live zone
+            # Estimate hot-zone token count (compressed conversation size —
+            # informational only, NOT used for cache-hit detection).
+            # The LLM provider's own cache_read_input_tokens tells us
+            # whether cache actually hit.
             if len(messages) > protect_recent:
                 hot_messages = messages[:-protect_recent]
             else:
-                hot_messages = messages  # session still growing; use what we have
-
-            # SHA-256 hash of canonical JSON (matches provider cache-key approach)
-            hot_zone_hash = hashlib.sha256(
-                json.dumps(
-                    hot_messages,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                    ensure_ascii=False,
-                ).encode()
-            ).hexdigest()[:8]
-
-            # Compressed hot-zone token count (or raw when no compression applied)
-            hot_zone_tokens = _count_tokens(json.dumps(hot_messages, ensure_ascii=False))
+                hot_messages = messages
+            hot_zone_tokens = _count_tokens(
+                json.dumps(hot_messages, ensure_ascii=False)
+            )
 
             meta_key = f"router:session:{session_key}:meta"
             meta = redis_client.hgetall(meta_key) or {}
@@ -371,8 +405,9 @@ class RagasLogger(CustomLogger):
                 "previous_model": last_model or None,
                 "seconds_since_last": round(gap, 1) if gap is not None else None,
                 "hot_zone_tokens": hot_zone_tokens,
-                "hot_zone_hash": hot_zone_hash,
                 "total_prompt_tokens": total_prompt_tokens,
+                "cache_read_input_tokens": cache_read_input_tokens,
+                "cache_creation_input_tokens": cache_creation_input_tokens,
             }
 
             list_key = f"router:session:{session_key}"

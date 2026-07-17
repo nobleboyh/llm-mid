@@ -443,8 +443,8 @@ class TestLogSessionSwitch:
         event = json.loads(mock_redis.lpush.call_args[0][1])
         assert event["hot_zone_tokens"] > 0
 
-    def test_event_has_new_fields(self):
-        """Event dict contains hot_zone_hash and total_prompt_tokens."""
+    def test_event_has_cache_fields(self):
+        """Event dict contains cache_read_input_tokens and cache_creation_input_tokens."""
         mock_redis = MagicMock()
         mock_redis.hgetall.return_value = {}
 
@@ -452,66 +452,59 @@ class TestLogSessionSwitch:
              patch("eval.redis_store.r", mock_redis):
             from proxy.callback import RagasLogger
             logger = RagasLogger()
-            kwargs = self.make_kwargs(model="deepseek-pro", session_header="sess-hash")
-            logger._log_session_switch(kwargs, total_prompt_tokens=15200)
+            kwargs = self.make_kwargs(model="deepseek-pro", session_header="sess-cache")
+            logger._log_session_switch(
+                kwargs,
+                total_prompt_tokens=15200,
+                cache_read_input_tokens=3400,
+                cache_creation_input_tokens=0,
+            )
 
         event = json.loads(mock_redis.lpush.call_args[0][1])
-        assert "hot_zone_hash" in event, f"Missing hot_zone_hash in event: {event}"
-        assert "total_prompt_tokens" in event, f"Missing total_prompt_tokens in event: {event}"
-        assert isinstance(event["hot_zone_hash"], str)
-        assert len(event["hot_zone_hash"]) == 8
+        assert "cache_read_input_tokens" in event, f"Missing cache_read_input_tokens: {event}"
+        assert "cache_creation_input_tokens" in event, f"Missing cache_creation_input_tokens: {event}"
+        assert event["cache_read_input_tokens"] == 3400
+        assert event["cache_creation_input_tokens"] == 0
+
+    def test_cache_fields_zero_default(self):
+        """Cache fields default to 0 when not passed."""
+        mock_redis = MagicMock()
+        mock_redis.hgetall.return_value = {}
+
+        with mock_headroom_compress(), \
+             patch("eval.redis_store.r", mock_redis):
+            from proxy.callback import RagasLogger
+            logger = RagasLogger()
+            logger._log_session_switch(self.make_kwargs())
+
+        event = json.loads(mock_redis.lpush.call_args[0][1])
+        assert event["cache_read_input_tokens"] == 0
+        assert event["cache_creation_input_tokens"] == 0
+
+    def test_cache_fields_present_in_lpush(self):
+        """Cache fields are passed through to the LPUSH event."""
+        mock_redis = MagicMock()
+        mock_redis.hgetall.return_value = {}
+
+        with mock_headroom_compress(), \
+             patch("eval.redis_store.r", mock_redis):
+            from proxy.callback import RagasLogger
+            logger = RagasLogger()
+            logger._log_session_switch(
+                self.make_kwargs(),
+                total_prompt_tokens=15200,
+                cache_read_input_tokens=3400,
+                cache_creation_input_tokens=1200,
+            )
+
+        event = json.loads(mock_redis.lpush.call_args[0][1])
+        assert event["cache_read_input_tokens"] == 3400
+        assert event["cache_creation_input_tokens"] == 1200
         assert event["total_prompt_tokens"] == 15200
+        assert event["hot_zone_tokens"] > 0
 
-    def test_hot_zone_hash_stable(self):
-        """Same messages produce same hash."""
-        mock_redis = MagicMock()
-        mock_redis.hgetall.return_value = {}
-
-        with mock_headroom_compress(), \
-             patch("eval.redis_store.r", mock_redis):
-            from proxy.callback import RagasLogger
-            logger = RagasLogger()
-            kwargs1 = self.make_kwargs(model="deepseek-pro", messages=[
-                {"role": "system", "content": "You are helpful."},
-                {"role": "user", "content": "Hello"},
-            ])
-            kwargs2 = self.make_kwargs(model="deepseek-pro", messages=[
-                {"role": "system", "content": "You are helpful."},
-                {"role": "user", "content": "Hello"},
-            ])
-            logger._log_session_switch(kwargs1)
-            logger._log_session_switch(kwargs2)
-
-        event1 = json.loads(mock_redis.lpush.call_args_list[0][0][1])
-        event2 = json.loads(mock_redis.lpush.call_args_list[1][0][1])
-        assert event1["hot_zone_hash"] == event2["hot_zone_hash"]
-
-    def test_hot_zone_hash_different(self):
-        """Different system prompts produce different hashes."""
-        mock_redis = MagicMock()
-        mock_redis.hgetall.return_value = {}
-
-        with mock_headroom_compress(), \
-             patch("eval.redis_store.r", mock_redis):
-            from proxy.callback import RagasLogger
-            logger = RagasLogger()
-            k1 = self.make_kwargs(messages=[
-                {"role": "system", "content": "You are helpful."},
-                {"role": "user", "content": "Hello"},
-            ])
-            k2 = self.make_kwargs(messages=[
-                {"role": "system", "content": "You are NOT helpful."},
-                {"role": "user", "content": "Hello"},
-            ])
-            logger._log_session_switch(k1)
-            logger._log_session_switch(k2)
-
-        event1 = json.loads(mock_redis.lpush.call_args_list[0][0][1])
-        event2 = json.loads(mock_redis.lpush.call_args_list[1][0][1])
-        assert event1["hot_zone_hash"] != event2["hot_zone_hash"]
-
-    def test_hot_zone_tokens_compressed(self):
-        """hot_zone_tokens > 0 and hot_zone_hash present when _count_tokens patched."""
+    def test_hot_zone_tokens_computed(self):
+        """hot_zone_tokens is still computed from messages."""
         mock_redis = MagicMock()
         mock_redis.hgetall.return_value = {}
 
@@ -525,7 +518,6 @@ class TestLogSessionSwitch:
 
         event = json.loads(mock_redis.lpush.call_args[0][1])
         assert event["hot_zone_tokens"] > 0
-        assert "hot_zone_hash" in event
 
 
 """Integration tests — require Docker (gateway + Redis running)."""
@@ -618,14 +610,17 @@ class TestIntegrationSessionSwitchLogging:
             assert "model" in e
             assert "timestamp" in e
             assert "hot_zone_tokens" in e
-            assert "hot_zone_hash" in e  # NEW
-            assert "total_prompt_tokens" in e  # NEW
+            assert "cache_read_input_tokens" in e
+            assert "cache_creation_input_tokens" in e
+            assert "total_prompt_tokens" in e
             assert "seconds_since_last" in e
             assert "previous_model" in e
-        # Verify new field types
+        # Verify cache field types
         for e in events:
-            assert isinstance(e["hot_zone_hash"], str), f"hot_zone_hash not str: {e['hot_zone_hash']}"
-            assert len(e["hot_zone_hash"]) == 8, f"hot_zone_hash length != 8: {e['hot_zone_hash']}"
+            assert isinstance(e["cache_read_input_tokens"], (int, float)), \
+                f"cache_read_input_tokens not numeric: {e['cache_read_input_tokens']}"
+            assert isinstance(e["cache_creation_input_tokens"], (int, float)), \
+                f"cache_creation_input_tokens not numeric: {e['cache_creation_input_tokens']}"
             assert isinstance(e["total_prompt_tokens"], (int, float)), \
                 f"total_prompt_tokens not numeric: {e['total_prompt_tokens']}"
 
