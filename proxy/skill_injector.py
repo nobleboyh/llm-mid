@@ -353,7 +353,12 @@ class SkillInjectorMiddleware:
         if system_messages:
             last_system = system_messages[-1]
             existing = last_system.get("content", "")
-            last_system["content"] = existing + separator + skill_content
+            if isinstance(existing, list):
+                # Content is already a list of parts (OpenAI format)
+                # Append skill content as a new text part
+                existing.append({"type": "text", "text": separator + skill_content})
+            else:
+                last_system["content"] = existing + separator + skill_content
         else:
             messages.insert(0, {"role": "system", "content": skill_content})
             payload["messages"] = messages
