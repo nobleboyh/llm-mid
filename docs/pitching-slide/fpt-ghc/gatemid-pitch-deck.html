@@ -1,0 +1,1856 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GateMid — AI Gateway Middleware</title>
+    <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Space+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        /* ===========================================
+           CSS CUSTOM PROPERTIES — CREATIVE MODE
+           =========================================== */
+        :root {
+            --cream: #FFFFFF;
+            --cream-2: #F1F3F6;
+            --ink: #162670;
+            --ink-2: #4A5D8A;
+            --green: #51B848;
+            --pink: #034EA2;
+            --orange: #F37021;
+            --yellow: #F7931E;
+            --stage-bg: #0D1A3A;
+            --slide-bg: #FFFFFF;
+
+            --font-display: 'Archivo Black', sans-serif;
+            --font-body: 'Space Grotesk', sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+        }
+
+        /* ===========================================
+           VIEWPORT BASE CSS (MANDATORY)
+           =========================================== */
+        html, body {
+            width: 100%; height: 100%; margin: 0; overflow: hidden;
+            background: var(--stage-bg);
+        }
+        .deck-viewport {
+            position: fixed; inset: 0; overflow: hidden;
+            background: var(--stage-bg);
+        }
+        .deck-stage {
+            position: absolute; left: 0; top: 0;
+            width: 1920px; height: 1080px; overflow: hidden;
+            transform-origin: 0 0;
+            background: var(--slide-bg);
+        }
+        .slide {
+            position: absolute; inset: 0;
+            width: 1920px; height: 1080px; overflow: hidden;
+            display: block;
+            visibility: hidden; opacity: 0; pointer-events: none;
+            background: var(--cream);
+        }
+        .slide.active, .slide.visible {
+            visibility: visible; opacity: 1; pointer-events: auto; z-index: 1;
+        }
+        img, video, canvas, svg { max-width: 100%; max-height: 100%; }
+        .deck-controls {
+            position: fixed; left: 50%; bottom: 22px;
+            transform: translateX(-50%); z-index: 1000;
+            display: flex; gap: 16px; align-items: center;
+        }
+        .deck-controls button {
+            font-family: var(--font-mono);
+            font-size: 13px; font-weight: 500;
+            letter-spacing: 0.08em; text-transform: uppercase;
+            background: var(--ink); color: var(--cream);
+            border: 2px solid var(--cream);
+            padding: 8px 18px; cursor: pointer;
+        }
+        .deck-controls button:hover { background: var(--cream); color: var(--ink); }
+        .deck-controls .page-indicator {
+            font-family: var(--font-mono);
+            font-size: 13px; color: var(--cream);
+            letter-spacing: 0.08em;
+            min-width: 80px; text-align: center;
+        }
+        @media print {
+            html, body { width: 1920px; height: auto; overflow: visible; background: #fff; }
+            .deck-viewport { position: static; overflow: visible; background: #fff; }
+            .deck-stage { position: static; width: auto; height: auto; transform: none !important; background: none; }
+            .slide { position: relative; display: block !important; visibility: visible !important; opacity: 1 !important; pointer-events: auto !important; width: 1920px; height: 1080px; break-after: page; page-break-after: always; }
+            .slide:last-child { break-after: auto; page-break-after: auto; }
+            .deck-controls { display: none !important; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.2s !important; }
+        }
+
+        /* ===========================================
+           CREATIVE MODE — CHROME FRAME
+           =========================================== */
+        .topbar {
+            position: absolute; left: 64px; right: 64px; top: 48px;
+            display: flex; justify-content: space-between; align-items: center;
+            z-index: 10;
+        }
+        .topbar-label {
+            font-family: var(--font-mono);
+            font-size: 24px; font-weight: 400;
+            letter-spacing: 0.08em; text-transform: uppercase;
+            color: var(--ink);
+        }
+        .hero-logo {
+            height: 72px; width: auto;
+            display: block;
+            margin-bottom: 24px;
+        }
+        .topbar-pill {
+            font-family: var(--font-mono);
+            font-size: 24px; font-weight: 400;
+            letter-spacing: 0.08em; text-transform: uppercase;
+            color: var(--ink);
+            border: 2px solid var(--ink);
+            border-radius: 999px;
+            padding: 6px 18px;
+        }
+        .slide-meta {
+            position: absolute; left: 64px; right: 64px; bottom: 40px;
+            display: flex; justify-content: space-between; align-items: center;
+            z-index: 10;
+        }
+        .meta-label {
+            font-family: var(--font-mono);
+            font-size: 24px; font-weight: 400;
+            letter-spacing: 0.06em; text-transform: uppercase;
+            color: var(--ink);
+        }
+        .meta-pages {
+            font-family: var(--font-mono);
+            font-size: 24px; font-weight: 400;
+            letter-spacing: 0.06em; text-transform: uppercase;
+            color: var(--ink);
+            display: flex; align-items: center; gap: 14px;
+        }
+        .meta-dot {
+            width: 10px; height: 10px;
+            background: var(--ink); border-radius: 50%;
+        }
+
+        /* ===========================================
+           SHARED COMPONENTS
+           =========================================== */
+        /* Stat cell base */
+        .stat-cell {
+            border: 4px solid var(--ink);
+            padding: 28px 32px;
+            display: flex; flex-direction: column; justify-content: center;
+        }
+        .stat-num {
+            font-family: var(--font-display);
+            font-size: 96px; font-weight: 400;
+            line-height: 0.9; letter-spacing: 0;
+        }
+        .stat-label {
+            font-family: var(--font-mono);
+            font-size: 18px; font-weight: 400;
+            letter-spacing: 0.08em; text-transform: uppercase;
+            line-height: 1.2; margin-top: 8px;
+        }
+        .stat-desc {
+            font-family: var(--font-body);
+            font-size: 20px; font-weight: 400;
+            line-height: 1.3; margin-top: 10px;
+            color: var(--ink-2);
+        }
+
+        /* Stat cell color variants */
+        .stat-cream { background: var(--cream); color: var(--ink); }
+        .stat-green { background: var(--green); color: var(--cream); }
+        .stat-green .stat-desc { color: var(--cream); opacity: 0.85; }
+        .stat-pink { background: var(--pink); color: var(--cream); }
+        .stat-pink .stat-desc { color: var(--cream); opacity: 0.85; }
+        .stat-orange { background: var(--orange); color: var(--cream); }
+        .stat-orange .stat-desc { color: var(--cream); opacity: 0.85; }
+        .stat-yellow { background: var(--yellow); color: var(--ink); }
+        .stat-yellow .stat-desc { color: var(--ink-2); }
+
+        /* Step card */
+        .step-card {
+            border: 4px solid var(--ink);
+            padding: 28px;
+            position: relative;
+        }
+        .step-num {
+            font-family: var(--font-display);
+            font-size: 140px; font-weight: 400;
+            line-height: 0.85; letter-spacing: 0;
+            margin-bottom: 8px;
+        }
+        .step-title {
+            font-family: var(--font-display);
+            font-size: 34px; font-weight: 400;
+            line-height: 1.0; letter-spacing: 0;
+            text-transform: uppercase;
+        }
+        .step-desc {
+            font-family: var(--font-body);
+            font-size: 22px; font-weight: 400;
+            line-height: 1.3; margin-top: 12px;
+        }
+        .step-card-cream { background: var(--cream); color: var(--ink); }
+        .step-card-cream .step-desc { color: var(--ink-2); }
+        .step-card-pink { background: var(--pink); color: var(--cream); }
+        .step-card-pink .step-desc { color: var(--cream); opacity: 0.85; }
+        .step-card-green { background: var(--green); color: var(--cream); }
+        .step-card-green .step-desc { color: var(--cream); opacity: 0.85; }
+        .step-card-yellow { background: var(--yellow); color: var(--ink); }
+        .step-card-yellow .step-desc { color: var(--ink); opacity: 0.7; }
+        .step-card-orange { background: var(--orange); color: var(--cream); }
+        .step-card-orange .step-desc { color: var(--cream); opacity: 0.85; }
+
+        /* Step arrow (CSS triangle) */
+        .step-arrow {
+            width: 0; height: 0;
+            border-top: 18px solid transparent;
+            border-bottom: 18px solid transparent;
+            border-left: 28px solid var(--ink);
+            flex-shrink: 0;
+        }
+
+        /* Kicker block */
+        .kicker {
+            font-family: var(--font-mono);
+            font-size: 20px; font-weight: 400;
+            letter-spacing: 0.14em; text-transform: uppercase;
+            background: var(--ink); color: var(--cream);
+            padding: 8px 18px; display: inline-block;
+            margin-bottom: 16px;
+        }
+
+        /* Display headline */
+        .display-lg {
+            font-family: var(--font-display);
+            font-size: 100px; font-weight: 400;
+            line-height: 0.92; letter-spacing: -0.01em;
+            text-transform: uppercase; color: var(--ink);
+            margin: 0;
+        }
+        .display-md {
+            font-family: var(--font-display);
+            font-size: 84px; font-weight: 400;
+            line-height: 0.92; letter-spacing: -0.01em;
+            text-transform: uppercase; color: var(--ink);
+            margin: 0;
+        }
+        .display-sm {
+            font-family: var(--font-display);
+            font-size: 72px; font-weight: 400;
+            line-height: 0.95; letter-spacing: -0.01em;
+            text-transform: uppercase; color: var(--ink);
+            margin: 0;
+        }
+        .display-hero {
+            font-family: var(--font-display);
+            font-size: 160px; font-weight: 400;
+            line-height: 0.92; letter-spacing: -0.01em;
+            text-transform: uppercase; color: var(--ink);
+            margin: 0;
+        }
+        .display-jumbo {
+            font-family: var(--font-display);
+            font-size: 220px; font-weight: 400;
+            line-height: 0.92; letter-spacing: -0.01em;
+            text-transform: uppercase;
+            margin: 0;
+        }
+
+        .body-lg {
+            font-family: var(--font-body);
+            font-size: 28px; font-weight: 400;
+            line-height: 1.4; letter-spacing: 0;
+            color: var(--ink-2);
+        }
+        .body-md {
+            font-family: var(--font-body);
+            font-size: 22px; font-weight: 400;
+            line-height: 1.3; letter-spacing: 0;
+            color: var(--ink-2);
+        }
+
+        /* Hard shadow blocks */
+        .shadow-hard {
+            box-shadow: 24px 24px 0 var(--orange), 24px 24px 0 4px var(--ink);
+        }
+        .shadow-stack {
+            box-shadow: 18px 18px 0 var(--ink);
+        }
+
+        /* ===========================================
+           SLIDE 1 — TITLE
+           =========================================== */
+        .slide-title .hero-block {
+            position: absolute; left: 96px; top: 170px; z-index: 5;
+        }
+        .slide-title .hero-block .display-hero {
+            font-size: 180px;
+        }
+        .slide-title .hero-sub {
+            font-family: var(--font-body);
+            font-size: 28px; font-weight: 400;
+            color: var(--ink-2); line-height: 1.4;
+            max-width: 780px; margin-top: 20px;
+        }
+        .slide-title .stat-row {
+            position: absolute; bottom: 180px; left: 96px;
+            display: flex; gap: 24px; z-index: 5;
+        }
+        .slide-title .stat-row .stat-cell {
+            min-width: 200px; padding: 24px 28px;
+        }
+        .slide-title .stat-row .stat-num {
+            font-size: 64px;
+        }
+        .slide-title .stat-row .stat-label {
+            font-size: 15px;
+        }
+
+        /* Title decorative: stacked blocks */
+        .stacked-blocks {
+            position: absolute; right: 96px; top: 160px;
+            width: 500px; height: 500px; z-index: 3;
+        }
+        .stacked-blocks .blk {
+            position: absolute;
+            border: 4px solid var(--ink);
+            width: 280px; height: 280px;
+        }
+        .stacked-blocks .blk-1 {
+            background: var(--pink); top: 0; left: 0;
+            box-shadow: 18px 18px 0 var(--ink);
+        }
+        .stacked-blocks .blk-2 {
+            background: var(--yellow); top: 70px; left: 70px;
+            box-shadow: 18px 18px 0 var(--ink);
+        }
+        .stacked-blocks .blk-3 {
+            background: var(--orange); top: 140px; left: 140px;
+            box-shadow: 18px 18px 0 var(--ink);
+        }
+        .stacked-blocks .blk-4 {
+            background: var(--cream-2); top: 210px; left: 210px;
+            box-shadow: 18px 18px 0 var(--ink);
+        }
+
+        /* Title decorative: circle */
+        .circle-decor {
+            position: absolute; right: 200px; bottom: 200px;
+            width: 120px; height: 120px;
+            background: var(--yellow); border: 4px solid var(--ink);
+            border-radius: 50%; z-index: 4;
+        }
+
+        /* ===========================================
+           SLIDE 2 — THE PROBLEM
+           =========================================== */
+        .slide-problem .content-area {
+            position: absolute; left: 96px; right: 96px; top: 170px;
+            z-index: 5;
+        }
+        .slide-problem .content-area .display-md {
+            margin-bottom: 36px;
+        }
+        .problem-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
+            gap: 24px;
+        }
+        .problem-grid .stat-cell {
+            min-height: 220px;
+        }
+        .problem-grid .stat-num {
+            font-size: 64px;
+        }
+        .problem-grid .stat-desc {
+            font-size: 22px; line-height: 1.3;
+        }
+        /* Highlight the cost item */
+        .problem-grid .highlight-cell {
+            border: 4px solid var(--ink);
+            box-shadow: 24px 24px 0 var(--pink), 24px 24px 0 4px var(--ink);
+            background: var(--cream);
+            padding: 32px 36px;
+            display: flex; flex-direction: column; justify-content: center;
+            position: relative;
+            z-index: 2;
+        }
+        .highlight-cell .stat-num {
+            font-family: var(--font-display);
+            font-size: 84px; font-weight: 400;
+            line-height: 0.9; color: var(--ink);
+        }
+        .highlight-cell .stat-label {
+            font-family: var(--font-mono);
+            font-size: 20px; font-weight: 400;
+            letter-spacing: 0.06em; text-transform: uppercase;
+            color: var(--ink); margin-top: 8px;
+        }
+        .highlight-cell .stat-desc {
+            font-family: var(--font-body);
+            font-size: 22px; font-weight: 400;
+            line-height: 1.3; color: var(--ink-2); margin-top: 10px;
+        }
+
+        /* ===========================================
+           SLIDE 3 — ARCHITECTURE
+           =========================================== */
+        .slide-arch .content-area {
+            position: absolute; left: 96px; right: 96px; top: 155px; bottom: 105px;
+            z-index: 5;
+            display: flex; flex-direction: column;
+        }
+        .arch-box {
+            border: 4px solid var(--ink);
+            padding: 20px 24px;
+            display: flex; flex-direction: column; justify-content: center;
+        }
+        .arch-box-label {
+            font-family: var(--font-display);
+            font-size: 22px; font-weight: 400;
+            line-height: 1.0; letter-spacing: 0;
+            text-transform: uppercase;
+        }
+        .arch-box-label.sm { font-size: 18px; }
+        .arch-box-sub {
+            font-family: var(--font-body);
+            font-size: 16px; font-weight: 400;
+            line-height: 1.3; margin-top: 4px;
+        }
+        .arch-box-green { background: var(--green); color: var(--cream); }
+        .arch-box-green .arch-box-sub { color: var(--cream); opacity: 0.85; }
+        .arch-box-pink { background: var(--pink); color: var(--cream); }
+        .arch-box-pink .arch-box-sub { color: var(--cream); opacity: 0.85; }
+        .arch-box-cream { background: var(--cream); color: var(--ink); }
+        .arch-box-cream .arch-box-sub { color: var(--ink-2); }
+        .arch-box-yellow { background: var(--yellow); color: var(--ink); }
+        .arch-box-yellow .arch-box-sub { color: var(--ink); opacity: 0.7; }
+        .arch-box-orange { background: var(--orange); color: var(--cream); }
+        .arch-box-orange .arch-box-sub { color: var(--cream); opacity: 0.85; }
+
+        /* Sync flow row */
+        .sync-flow {
+            display: flex; align-items: stretch; gap: 0; margin-top: 16px;
+            width: 100%;
+        }
+        .sync-flow .sf-col { display: flex; flex-direction: column; gap: 8px; }
+        .sync-flow .sf-col.tool-col { width: 140px; flex-shrink: 0; }
+        .sync-flow .sf-col.proxy-col { flex: 1; }
+        .sync-flow .sf-col.prov-col { width: 140px; flex-shrink: 0; }
+        .sync-arrow {
+            flex-shrink: 0; width: 52px;
+            display: flex; align-items: center; justify-content: center;
+            font-family: var(--font-mono);
+            font-size: 32px; font-weight: 700; color: var(--ink);
+        }
+
+        /* Inside proxy: router + middleware side by side */
+        .proxy-inner {
+            display: flex; gap: 10px; flex: 1;
+        }
+        .proxy-router {
+            width: 190px; flex-shrink: 0;
+            border: 4px solid var(--ink);
+            background: var(--green); color: var(--cream);
+            padding: 20px 18px;
+            display: flex; flex-direction: column; justify-content: center;
+        }
+        .proxy-mw {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
+            gap: 8px;
+        }
+        .proxy-mw .mw-chip {
+            border: 3px solid var(--ink);
+            padding: 18px 14px;
+            font-family: var(--font-mono);
+            font-size: 16px; font-weight: 400;
+            letter-spacing: 0.04em; text-transform: uppercase;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .mw-chip.pink { background: var(--pink); color: var(--cream); }
+        .mw-chip.yellow { background: var(--yellow); color: var(--ink); }
+        .mw-chip.orange { background: var(--orange); color: var(--cream); }
+        .mw-chip.green { background: var(--green); color: var(--cream); }
+
+        /* Providers row */
+        .providers {
+            display: flex; flex-direction: column; gap: 8px; height: 100%;
+        }
+        .providers .pbox {
+            border: 4px solid var(--ink);
+            padding: 0; flex: 1;
+            display: flex; align-items: center; justify-content: center;
+            text-align: center;
+        }
+        .providers .pbox .arch-box-label { font-size: 20px; }
+
+        /* --- ASYNC FLOW (separator + eval row) --- */
+        .async-divider {
+            display: flex; align-items: center; gap: 16px;
+            margin: 24px 0 16px 0;
+            width: 100%;
+        }
+        .async-divider .div-label {
+            font-family: var(--font-mono);
+            font-size: 18px; font-weight: 400;
+            letter-spacing: 0.1em; text-transform: uppercase;
+            color: var(--ink-2); white-space: nowrap;
+        }
+        .async-divider .rule {
+            flex: 1; height: 0;
+            border-bottom: 3px dashed var(--ink-2); opacity: 0.5;
+        }
+
+        .async-flow {
+            display: flex; align-items: stretch; gap: 0;
+            width: 100%;
+        }
+        .async-flow .af-col { flex: 1; }
+        .async-flow .af-col .arch-box { height: 100%; }
+        .async-arrow {
+            flex-shrink: 0; width: 52px;
+            display: flex; align-items: center; justify-content: center;
+            font-family: var(--font-mono);
+            font-size: 30px; font-weight: 400; color: var(--ink-2);
+            opacity: 0.6;
+        }
+
+        /* Dashed connecting arrow from proxy to async */
+        .proxy-to-async {
+            display: flex; justify-content: flex-end; margin-top: 2px;
+            font-family: var(--font-mono);
+            font-size: 16px; font-weight: 400; color: var(--ink-2);
+            letter-spacing: 0.1em;
+        }
+
+        /* ===========================================
+           SLIDE 4 — MIDDLEWARE STACK
+           =========================================== */
+        .slide-middleware .content-area {
+            position: absolute; left: 96px; right: 96px; top: 170px;
+            z-index: 5;
+        }
+        .pipeline-flow {
+            display: flex; align-items: center; gap: 0;
+            margin-top: 28px;
+        }
+        .pipeline-flow .step-card {
+            flex: 1; min-height: 380px;
+        }
+        .pipeline-flow .step-card .step-num {
+            font-size: 100px;
+        }
+
+        /* ===========================================
+           SLIDE 5 — API KEY MASKING & PII/PHI
+           =========================================== */
+        .slide-masking .content-area {
+            position: absolute; left: 96px; right: 96px; top: 170px;
+            z-index: 5;
+        }
+        .mask-demo {
+            border: 4px solid var(--ink);
+            background: var(--cream);
+            padding: 28px 32px;
+            margin-top: 28px;
+            font-family: var(--font-mono);
+            font-size: 18px; font-weight: 400;
+            line-height: 1.6; letter-spacing: 0.02em;
+            color: var(--ink);
+        }
+        .mask-demo .redacted {
+            background: var(--ink);
+            color: var(--cream);
+            padding: 2px 8px;
+            display: inline;
+        }
+        .provider-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px; margin-top: 28px;
+        }
+        .provider-chip {
+            border: 3px solid var(--ink);
+            padding: 14px 16px;
+            text-align: center;
+            font-family: var(--font-mono);
+            font-size: 14px; font-weight: 400;
+            letter-spacing: 0.06em; text-transform: uppercase;
+            color: var(--ink);
+        }
+        .provider-chip.pink { background: var(--pink); color: var(--cream); }
+        .provider-chip.green { background: var(--green); color: var(--cream); }
+        .provider-chip.yellow { background: var(--yellow); }
+        .provider-chip.cream2 { background: var(--cream-2); }
+        .provider-chip.orange { background: var(--orange); color: var(--cream); }
+
+        .pii-callout {
+            border: 4px solid var(--ink);
+            padding: 24px 32px;
+            margin-top: 20px;
+            box-shadow: 24px 24px 0 var(--pink), 24px 24px 0 4px var(--ink);
+            background: var(--cream);
+            position: relative; z-index: 2;
+        }
+        .pii-callout .ph-label {
+            font-family: var(--font-display);
+            font-size: 28px; font-weight: 400;
+            text-transform: uppercase; color: var(--ink);
+            margin-bottom: 4px;
+        }
+        .pii-callout .ph-desc {
+            font-family: var(--font-body);
+            font-size: 20px; font-weight: 400;
+            color: var(--ink-2); line-height: 1.3;
+        }
+
+        /* ===========================================
+           SLIDE 6 — SMART ROUTING
+           =========================================== */
+        .slide-routing .content-area {
+            position: absolute; left: 96px; right: 96px; top: 170px;
+            z-index: 5;
+        }
+        .routing-table {
+            border: 4px solid var(--ink);
+            background: var(--cream-2);
+            margin-top: 28px;
+        }
+        .routing-table .rt-head {
+            display: grid;
+            grid-template-columns: 200px 180px 1fr;
+            background: var(--ink); color: var(--cream);
+            font-family: var(--font-display);
+            font-size: 24px; font-weight: 400;
+            line-height: 1.0; text-transform: uppercase;
+        }
+        .routing-table .rt-head > div {
+            padding: 18px 26px; border-right: 3px solid var(--cream);
+        }
+        .routing-table .rt-head > div:last-child { border-right: none; }
+        .routing-table .rt-row {
+            display: grid;
+            grid-template-columns: 200px 180px 1fr;
+            border-bottom: 3px solid var(--ink);
+        }
+        .routing-table .rt-row:last-child { border-bottom: none; }
+        .routing-table .rt-row > div {
+            padding: 22px 26px; border-right: 3px solid var(--ink);
+            display: flex; align-items: center;
+        }
+        .routing-table .rt-row > div:last-child { border-right: none; }
+        .rt-tier {
+            font-family: var(--font-display);
+            font-size: 28px; font-weight: 400;
+            text-transform: uppercase; line-height: 1.0;
+        }
+        .rt-score {
+            font-family: var(--font-mono);
+            font-size: 24px; font-weight: 400;
+            letter-spacing: 0.04em;
+        }
+        .rt-model {
+            font-family: var(--font-body);
+            font-size: 24px; font-weight: 400;
+        }
+        .rt-row-green { background: var(--green); }
+        .rt-row-green .rt-tier, .rt-row-green .rt-score, .rt-row-green .rt-model { color: var(--cream); }
+        .rt-row-cream { background: var(--cream); }
+        .rt-row-cream .rt-tier, .rt-row-cream .rt-score, .rt-row-cream .rt-model { color: var(--ink); }
+        .rt-row-pink { background: var(--pink); }
+        .rt-row-pink .rt-tier, .rt-row-pink .rt-score, .rt-row-pink .rt-model { color: var(--cream); }
+        .rt-row-orange { background: var(--orange); }
+        .rt-row-orange .rt-tier, .rt-row-orange .rt-score, .rt-row-orange .rt-model { color: var(--cream); }
+
+        /* Fallback callout */
+        .fallback-callout {
+            margin-top: 28px;
+            border: 4px solid var(--ink);
+            background: var(--yellow);
+            padding: 20px 28px;
+            display: flex; align-items: center; gap: 18px;
+        }
+        .fallback-callout .fb-label {
+            font-family: var(--font-mono);
+            font-size: 20px; font-weight: 400;
+            letter-spacing: 0.1em; text-transform: uppercase;
+            color: var(--ink);
+        }
+        .fallback-callout .fb-desc {
+            font-family: var(--font-body);
+            font-size: 22px; font-weight: 400;
+            color: var(--ink);
+        }
+
+        /* ===========================================
+           SLIDE 6 — COMPRESSION + SKILLS
+           =========================================== */
+        .slide-compress .content-area {
+            position: absolute; left: 96px; right: 96px; top: 170px;
+            z-index: 5;
+        }
+        .two-col {
+            display: flex; gap: 32px; margin-top: 28px;
+        }
+        .two-col .col {
+            flex: 1; display: flex; flex-direction: column; gap: 20px;
+        }
+
+        /* Compression stat bar */
+        .comp-bar-wrap {
+            border: 4px solid var(--ink);
+            background: var(--cream-2);
+            padding: 28px 32px;
+        }
+        .comp-bar-label {
+            font-family: var(--font-mono);
+            font-size: 18px; font-weight: 400;
+            letter-spacing: 0.08em; text-transform: uppercase;
+            color: var(--ink); margin-bottom: 16px;
+        }
+        .comp-bar-track {
+            height: 48px; background: var(--cream);
+            border: 3px solid var(--ink); position: relative;
+        }
+        .comp-bar-fill {
+            position: absolute; left: 0; top: 0; bottom: 0;
+            background: var(--green);
+        }
+        .comp-bar-pct {
+            position: absolute; right: 12px; top: 50%;
+            transform: translateY(-50%);
+            font-family: var(--font-display);
+            font-size: 28px; font-weight: 400;
+            color: var(--ink); line-height: 1;
+        }
+
+        /* Skill pill tags */
+        .skill-tags {
+            display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px;
+        }
+        .skill-tag {
+            font-family: var(--font-mono);
+            font-size: 20px; font-weight: 400;
+            letter-spacing: 0.06em;
+            color: var(--ink);
+            background: var(--cream);
+            border: 3px solid var(--ink);
+            padding: 10px 20px;
+        }
+
+        /* ===========================================
+           SLIDE 7 — QUALITY SCORING
+           =========================================== */
+        .slide-scoring .content-area {
+            position: absolute; left: 96px; right: 96px; top: 170px;
+            z-index: 5;
+        }
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px; margin-top: 28px;
+        }
+        .metric-cell {
+            border: 4px solid var(--ink);
+            padding: 28px 28px;
+            display: flex; flex-direction: column;
+            min-height: 220px;
+        }
+        .metric-cell .metric-weight {
+            font-family: var(--font-mono);
+            font-size: 16px; font-weight: 400;
+            letter-spacing: 0.1em; text-transform: uppercase;
+            margin-bottom: 12px;
+        }
+        .metric-cell .metric-name {
+            font-family: var(--font-display);
+            font-size: 30px; font-weight: 400;
+            line-height: 1.0; text-transform: uppercase;
+        }
+        .metric-cell .metric-desc {
+            font-family: var(--font-body);
+            font-size: 20px; font-weight: 400;
+            line-height: 1.3; margin-top: 10px;
+        }
+        .metric-cream { background: var(--cream); }
+        .metric-cream .metric-weight { color: var(--ink-2); }
+        .metric-cream .metric-name { color: var(--ink); }
+        .metric-cream .metric-desc { color: var(--ink-2); }
+        .metric-pink { background: var(--pink); }
+        .metric-pink .metric-weight { color: var(--cream); opacity: 0.8; }
+        .metric-pink .metric-name { color: var(--cream); }
+        .metric-pink .metric-desc { color: var(--cream); opacity: 0.85; }
+        .metric-green { background: var(--green); }
+        .metric-green .metric-weight { color: var(--cream); opacity: 0.7; }
+        .metric-green .metric-name { color: var(--cream); }
+        .metric-green .metric-desc { color: var(--cream); opacity: 0.85; }
+        .metric-orange { background: var(--orange); }
+        .metric-orange .metric-weight { color: var(--cream); opacity: 0.7; }
+        .metric-orange .metric-name { color: var(--cream); }
+        .metric-orange .metric-desc { color: var(--cream); opacity: 0.85; }
+
+        /* Scoring pipeline mini */
+        .score-pipeline {
+            margin-top: 28px;
+            display: flex; align-items: center; gap: 16px;
+        }
+        .score-node {
+            border: 4px solid var(--ink);
+            background: var(--cream);
+            padding: 16px 28px;
+            font-family: var(--font-mono);
+            font-size: 17px; font-weight: 400;
+            letter-spacing: 0.06em; text-transform: uppercase;
+            color: var(--ink);
+        }
+        .score-node.pink { background: var(--pink); color: var(--cream); }
+        .score-arrow {
+            font-family: var(--font-mono);
+            font-size: 28px; font-weight: 700; color: var(--ink);
+        }
+
+        /* ===========================================
+           SLIDE 8 — OBSERVABILITY
+           =========================================== */
+        .slide-observe .content-area {
+            position: absolute; left: 96px; right: 96px; top: 170px;
+            z-index: 5;
+        }
+        .tui-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
+            gap: 24px; margin-top: 28px;
+        }
+        .tui-card {
+            border: 4px solid var(--ink);
+            padding: 32px 36px;
+            display: flex; flex-direction: column;
+            min-height: 260px;
+        }
+        .tui-card .tui-icon {
+            font-family: var(--font-mono);
+            font-size: 16px; font-weight: 400;
+            letter-spacing: 0.1em; text-transform: uppercase;
+            margin-bottom: 12px;
+        }
+        .tui-card .tui-name {
+            font-family: var(--font-display);
+            font-size: 38px; font-weight: 400;
+            line-height: 1.0; text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+        .tui-card .tui-cmd {
+            font-family: var(--font-mono);
+            font-size: 17px; font-weight: 400;
+            letter-spacing: 0.04em;
+            line-height: 1.3;
+        }
+        .tui-card .tui-desc {
+            font-family: var(--font-body);
+            font-size: 20px; font-weight: 400;
+            line-height: 1.3; margin-top: 6px;
+        }
+        .tui-cream { background: var(--cream); }
+        .tui-cream .tui-icon { color: var(--ink-2); }
+        .tui-cream .tui-name { color: var(--ink); }
+        .tui-cream .tui-desc { color: var(--ink-2); }
+        .tui-cream .tui-cmd { color: var(--ink-2); }
+        .tui-yellow { background: var(--yellow); }
+        .tui-yellow .tui-icon { color: var(--ink); opacity: 0.7; }
+        .tui-yellow .tui-name { color: var(--ink); }
+        .tui-yellow .tui-desc { color: var(--ink); opacity: 0.7; }
+        .tui-yellow .tui-cmd { color: var(--ink); opacity: 0.7; }
+        .tui-pink { background: var(--pink); }
+        .tui-pink .tui-icon { color: var(--cream); opacity: 0.8; }
+        .tui-pink .tui-name { color: var(--cream); }
+        .tui-pink .tui-desc { color: var(--cream); opacity: 0.85; }
+        .tui-pink .tui-cmd { color: var(--cream); opacity: 0.7; }
+        .tui-orange { background: var(--orange); }
+        .tui-orange .tui-icon { color: var(--cream); opacity: 0.7; }
+        .tui-orange .tui-name { color: var(--cream); }
+        .tui-orange .tui-desc { color: var(--cream); opacity: 0.85; }
+        .tui-orange .tui-cmd { color: var(--cream); opacity: 0.7; }
+
+        .key-hint {
+            margin-top: 20px;
+            font-family: var(--font-mono);
+            font-size: 17px; font-weight: 400;
+            letter-spacing: 0.06em; color: var(--ink);
+        }
+
+        /* ===========================================
+           SLIDE 9 — QUICK START
+           =========================================== */
+        .slide-setup .content-area {
+            position: absolute; left: 96px; right: 96px; top: 170px;
+            z-index: 5;
+        }
+        .setup-steps {
+            display: flex; gap: 24px; margin-top: 28px;
+        }
+        .setup-steps .step-card {
+            flex: 1; min-height: 320px;
+        }
+        .code-block {
+            font-family: var(--font-mono);
+            font-size: 19px; font-weight: 400;
+            line-height: 1.5; letter-spacing: 0.02em;
+            background: var(--cream);
+            border: 3px solid var(--ink);
+            padding: 20px 24px; margin-top: 16px;
+            color: var(--ink);
+        }
+        .code-block .comment { opacity: 0.4; }
+
+        /* ===========================================
+           SLIDE 10 — CLOSING (GREEN)
+           =========================================== */
+        .slide-closing {
+            background: var(--green) !important;
+        }
+        .slide-closing .topbar-label,
+        .slide-closing .topbar-pill,
+        .slide-closing .meta-label,
+        .slide-closing .meta-pages,
+        .slide-closing .display-jumbo,
+        .slide-closing .body-lg,
+        .slide-closing .body-md { color: var(--cream); }
+        .slide-closing .topbar-pill { border-color: var(--cream); }
+        .slide-closing .meta-dot { background: var(--cream); }
+
+        .closing-content {
+            position: absolute; left: 96px; top: 200px; z-index: 5;
+            max-width: 1100px;
+        }
+        .closing-strap {
+            font-family: var(--font-body);
+            font-size: 28px; font-weight: 400;
+            color: var(--cream); line-height: 1.4;
+            margin-top: 24px; max-width: 800px;
+        }
+
+        /* Stamp */
+        .stamp {
+            position: absolute; right: 120px; top: 220px;
+            width: 340px; height: 340px;
+            background: var(--pink);
+            border: 4px solid var(--cream);
+            transform: rotate(-6deg);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 6;
+        }
+        .stamp-inner {
+            width: 220px; height: 220px;
+            border: 4px solid var(--cream);
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            flex-direction: column;
+        }
+        .stamp-inner .stamp-num {
+            font-family: var(--font-display);
+            font-size: 64px; font-weight: 400;
+            line-height: 0.9; color: var(--cream);
+        }
+        .stamp-inner .stamp-label {
+            font-family: var(--font-mono);
+            font-size: 16px; font-weight: 400;
+            letter-spacing: 0.1em; text-transform: uppercase;
+            color: var(--cream); margin-top: 4px;
+        }
+
+        /* Closing stat row */
+        .closing-stats {
+            position: absolute; bottom: 180px; left: 96px;
+            display: flex; gap: 24px; z-index: 5;
+        }
+        .closing-stat {
+            border: 4px solid var(--cream);
+            padding: 24px 32px; min-width: 180px;
+        }
+        .closing-stat .cs-num {
+            font-family: var(--font-display);
+            font-size: 56px; font-weight: 400;
+            line-height: 0.9; color: var(--cream);
+        }
+        .closing-stat .cs-label {
+            font-family: var(--font-mono);
+            font-size: 14px; font-weight: 400;
+            letter-spacing: 0.08em; text-transform: uppercase;
+            color: var(--cream); opacity: 0.8; margin-top: 6px;
+        }
+
+        /* ===========================================
+           INLINE EDITING (post-draft)
+           =========================================== */
+        .edit-hotzone {
+            position: fixed; top: 0; left: 0;
+            width: 80px; height: 80px;
+            z-index: 10000; cursor: pointer;
+        }
+        .edit-toggle {
+            position: fixed; top: 12px; left: 12px;
+            font-family: var(--font-mono);
+            font-size: 13px; letter-spacing: 0.08em;
+            background: var(--ink); color: var(--cream);
+            border: 2px solid var(--cream); padding: 6px 14px;
+            cursor: pointer; z-index: 10001;
+            opacity: 0; pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+        .edit-toggle.show, .edit-toggle.active {
+            opacity: 1; pointer-events: auto;
+        }
+        [contenteditable="true"] {
+            outline: 2px dashed rgba(255,255,255,0.4);
+            outline-offset: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="deck-viewport">
+        <main class="deck-stage" id="deckStage">
+
+            <!-- ===========================================
+                 SLIDE 1 — TITLE
+                 =========================================== -->
+            <section class="slide slide-title active visible" id="slide-1">
+                <!-- <div class="topbar">
+                    <span class="topbar-label">AI Gateway</span>
+                    <span class="topbar-pill">v1.0</span>
+                </div> -->
+
+                <div class="hero-block">
+                    <img src="fpt-logo.png" alt="FPT Software" class="hero-logo">
+                    <h1 class="display-hero">GateMid</h1>
+                    <p class="hero-sub">Local-dev proxy middleware that compresses prompts, auto-routes by complexity, injects skill directives, and scores every LLM response — all with zero added latency.</p>
+                </div>
+
+                <div class="stacked-blocks">
+                    <div class="blk blk-1"></div>
+                    <div class="blk blk-2"></div>
+                    <div class="blk blk-3"></div>
+                    <div class="blk blk-4"></div>
+                </div>
+                <div class="circle-decor"></div>
+
+                <div class="stat-row">
+                    <div class="stat-cell stat-green">
+                        <div class="stat-num">60–95%</div>
+                        <div class="stat-label">Token Savings</div>
+                    </div>
+                    <div class="stat-cell stat-pink">
+                        <div class="stat-num">&lt;1ms</div>
+                        <div class="stat-label">Router Latency</div>
+                    </div>
+                    <div class="stat-cell stat-orange">
+                        <div class="stat-num">4</div>
+                        <div class="stat-label">Quality Metrics</div>
+                    </div>
+                    <div class="stat-cell stat-yellow">
+                        <div class="stat-num">0</div>
+                        <div class="stat-label">Config Changes</div>
+                    </div>
+                </div>
+
+                <div class="slide-meta">
+                    <span class="meta-label">Middleware Proxy</span>
+                    <span class="meta-pages">01<span class="meta-dot"></span>11</span>
+                </div>
+            </section>
+
+            <!-- ===========================================
+                 SLIDE 2 — THE PROBLEM
+                 =========================================== -->
+            <section class="slide slide-problem" id="slide-2">
+                <div class="topbar">
+                    <span class="topbar-label">Why GateMid</span>
+                    <span class="topbar-pill">Problem</span>
+                </div>
+
+                <div class="content-area">
+                    <h2 class="display-md">The Problem</h2>
+
+                    <div class="problem-grid">
+                        <div class="highlight-cell">
+                            <div class="stat-num">500+</div>
+                            <div class="stat-label">Wasted Tokens Per Call</div>
+                            <div class="stat-desc">AI coding tools send massive system prompts on every request. You pay for these tokens even when the model doesn't need them.</div>
+                        </div>
+                        <div class="stat-cell stat-pink">
+                            <div class="stat-num">∞</div>
+                            <div class="stat-label">Model Selection Fatigue</div>
+                            <div class="stat-desc">Flash or Pro? Gemini or DeepSeek? Users waste mental energy picking models for every query — or default to expensive models for trivial asks.</div>
+                        </div>
+                        <div class="stat-cell stat-orange">
+                            <div class="stat-num">0</div>
+                            <div class="stat-label">Quality Visibility</div>
+                            <div class="stat-desc">Without scoring, you can't know if model changes or prompt experiments actually improve output. You're flying blind on quality.</div>
+                        </div>
+                        <div class="stat-cell stat-yellow">
+                            <div class="stat-num">?</div>
+                            <div class="stat-label">Behavioral Control</div>
+                            <div class="stat-desc">Want minimalist code? Concise output? You'd need to edit tool configs or write system prompts. There's no quick way to dial in output style.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="slide-meta">
+                    <span class="meta-label">Pain Points</span>
+                    <span class="meta-pages">02<span class="meta-dot"></span>11</span>
+                </div>
+            </section>
+
+            <!-- ===========================================
+                 SLIDE 3 — ARCHITECTURE
+                 =========================================== -->
+            <section class="slide slide-arch" id="slide-3">
+                <div class="topbar">
+                    <span class="topbar-label">System Design</span>
+                    <span class="topbar-pill">Architecture</span>
+                </div>
+
+                <div class="content-area">
+                    <h2 class="display-md">Architecture</h2>
+
+                    <div style="display:flex; flex-direction:column; align-items:center; flex:1; width:1100px; align-self:center;">
+
+                    <!-- SYNC FLOW: Tool → Proxy → Providers -->
+                    <div style="font-family:var(--font-mono);font-size:18px;font-weight:400;letter-spacing:0.1em;text-transform:uppercase;color:var(--ink-2);margin-bottom:4px;width:100%;">Sync — Request Path (HTTPS)</div>
+                    <div class="sync-flow">
+                        <!-- Coding Tool -->
+                        <div class="sf-col tool-col">
+                            <div class="arch-box arch-box-cream" style="flex:1;">
+                                <div class="arch-box-label">Coding<br>Tool</div>
+                                <div class="arch-box-sub">Claude Code<br>Open Code</div>
+                            </div>
+                        </div>
+                        <span class="sync-arrow">→</span>
+
+                        <!-- GateMid Proxy -->
+                        <div class="sf-col proxy-col">
+                            <div class="arch-box arch-box-cream">
+                                <div class="arch-box-label">GateMid Proxy :4000</div>
+                            </div>
+                            <div class="proxy-inner">
+                                <div class="proxy-router">
+                                    <div style="font-family:var(--font-display);font-size:18px;text-transform:uppercase;line-height:1.0;margin-bottom:8px;">Complexity Router</div>
+                                    <div style="font-family:var(--font-body);font-size:15px;line-height:1.3;opacity:0.85;">7-dimension rule-based classifier<br>&lt;1ms · 4-tier routing</div>
+                                </div>
+                                <div class="proxy-mw">
+                                    <div class="mw-chip pink">Mask Keys</div>
+                                    <div class="mw-chip yellow">Capture Q</div>
+                                    <div class="mw-chip orange">Inject Skills</div>
+                                    <div class="mw-chip green">Compress</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <span class="sync-arrow">→</span>
+
+                        <!-- Providers -->
+                        <div class="sf-col prov-col">
+                            <div class="providers">
+                                <div class="pbox arch-box-pink">
+                                    <div class="arch-box-label">Gemini</div>
+                                </div>
+                                <div class="pbox arch-box-orange">
+                                    <div class="arch-box-label">DeepSeek</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Divider: Async path -->
+                    <div class="async-divider">
+                        <span class="div-label">Async</span>
+                        <div class="rule"></div>
+                        <span class="div-label" style="font-size:17px;">Fire-and-Forget — No Latency Impact</span>
+                    </div>
+
+                    <!-- ASYNC FLOW -->
+                    <div class="async-flow">
+                        <div class="af-col">
+                            <div class="arch-box arch-box-pink">
+                                <div class="arch-box-label sm">RagasLogger Callback</div>
+                                <div class="arch-box-sub">Captures (question, answer, context) · RPUSH to Redis · Skip loop detection</div>
+                            </div>
+                        </div>
+                        <span class="async-arrow">→</span>
+                        <div class="af-col">
+                            <div class="arch-box arch-box-yellow">
+                                <div class="arch-box-label sm">Redis</div>
+                                <div class="arch-box-sub">eval:pending queue · Scored records (30d TTL) · Leaderboards · Headroom stats</div>
+                            </div>
+                        </div>
+                        <span class="async-arrow">→</span>
+                        <div class="af-col">
+                            <div class="arch-box arch-box-orange">
+                                <div class="arch-box-label sm">Eval Worker</div>
+                                <div class="arch-box-sub">BLPOP from queue · Ragas scoring · DeepSeek LLM-as-judge · Gemini embeddings</div>
+                            </div>
+                        </div>
+                    </div>
+                    </div><!-- /.centered-diagram-wrapper -->
+                </div>
+
+                <div class="slide-meta">
+                    <span class="meta-label">3 Docker Containers · Sync + Async Paths</span>
+                    <span class="meta-pages">03<span class="meta-dot"></span>11</span>
+                </div>
+            </section>
+
+            <!-- ===========================================
+                 SLIDE 4 — MIDDLEWARE STACK
+                 =========================================== -->
+            <section class="slide slide-middleware" id="slide-4">
+                <div class="topbar">
+                    <span class="topbar-label">Request Pipeline</span>
+                    <span class="topbar-pill">Middleware</span>
+                </div>
+
+                <div class="content-area">
+                    <h2 class="display-md">Middleware Stack</h2>
+
+                    <div class="pipeline-flow">
+                        <div class="step-card step-card-pink">
+                            <div class="step-num">01</div>
+                            <div class="step-title">ApiKey<br>Masking</div>
+                            <div class="step-desc">8 regex patterns sanitize API keys in request/response bodies before any logging sees them. Covers Gemini, GitHub, AWS, OpenAI, Anthropic — 36+ key formats.</div>
+                        </div>
+                        <div class="step-arrow"></div>
+                        <div class="step-card step-card-yellow">
+                            <div class="step-num">02</div>
+                            <div class="step-title">Capture<br>Original</div>
+                            <div class="step-desc">Snapshots the raw user question into metadata before compression touches it. Ensures eval scores the real question, not the compressed version.</div>
+                        </div>
+                        <div class="step-arrow"></div>
+                        <div class="step-card step-card-orange">
+                            <div class="step-num">03</div>
+                            <div class="step-title">Skill<br>Injector</div>
+                            <div class="step-desc">Detects $trigger tokens ($ponytail, $caveman), strips them from messages, injects skill prompts into system prompt. Multiple triggers per message. Injected before compression.</div>
+                        </div>
+                        <div class="step-arrow"></div>
+                        <div class="step-card step-card-green">
+                            <div class="step-num">04</div>
+                            <div class="step-title">Headroom<br>Compress</div>
+                            <div class="step-desc">SmartCrusher (JSON), CodeCompressor (AST), CacheAligner (KV-cache). 60–95% token reduction. Compression happens last — after skills are injected.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="slide-meta">
+                    <span class="meta-label">ASGI · Registered Reverse Order</span>
+                    <span class="meta-pages">04<span class="meta-dot"></span>11</span>
+                </div>
+            </section>
+
+            <!-- ===========================================
+                 SLIDE 5 — API KEY MASKING & PII/PHI
+                 =========================================== -->
+            <section class="slide slide-masking" id="slide-5">
+                <div class="topbar">
+                    <span class="topbar-label">Guardrails</span>
+                    <span class="topbar-pill">Security</span>
+                </div>
+
+                <div class="content-area">
+                    <h2 class="display-md">API Key Masking</h2>
+
+                    <div class="two-col" style="margin-top: 28px;">
+                        <!-- Left: Demo -->
+                        <div class="col">
+                            <div class="kicker">Before (Raw Logs)</div>
+                            <div class="mask-demo" style="border:4px solid var(--pink);">
+                                Authorization: Bearer gemini-AIzaSyD8xK2mP7qL9wR<br>
+                                x-api-key: deepseek-sk-v4-z8Wm3QpX<br>
+                                anthropic-api-key: sk-ant-api03-xY7vB2
+                            </div>
+                            <div class="kicker" style="margin-top:20px;">After (Sanitized)</div>
+                            <div class="mask-demo" style="border:4px solid var(--green);">
+                                Authorization: Bearer <span class="redacted">■■■■■■■■</span><br>
+                                x-api-key: <span class="redacted">■■■■■■■■</span><br>
+                                anthropic-api-key: <span class="redacted">■■■■■■■■</span>
+                            </div>
+                        </div>
+
+                        <!-- Right: Providers covered -->
+                        <div class="col">
+                            <div class="kicker">8 Regex Patterns · 36+ Key Formats</div>
+                            <div class="provider-grid">
+                                <div class="provider-chip pink">Gemini<br>AIzaSy</div>
+                                <div class="provider-chip yellow">GitHub<br>ghp_ / gho_</div>
+                                <div class="provider-chip cream2">AWS<br>AKIA / ASIA</div>
+                                <div class="provider-chip orange">OpenAI<br>sk-proj-</div>
+                                <div class="provider-chip cream2">Anthropic<br>sk-ant-</div>
+                                <div class="provider-chip green">DeepSeek<br>sk-v4-</div>
+                                <div class="provider-chip pink">Cohere<br>Bearer</div>
+                                <div class="provider-chip yellow">Generic<br>x-api-key</div>
+                            </div>
+
+                            <div class="pii-callout" style="margin-top:24px;">
+                                <div class="ph-label">Beyond Keys → PII / PHI</div>
+                                <div class="ph-desc">The same regex-based masking layer can sanitize personally identifiable information and protected health information — names, emails, SSNs, medical record numbers, IP addresses — before any downstream system or log sees them. Drop-in pattern, no code changes.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="slide-meta">
+                    <span class="meta-label">Outermost Middleware · Runs First Inbound</span>
+                    <span class="meta-pages">05<span class="meta-dot"></span>11</span>
+                </div>
+            </section>
+
+            <!-- ===========================================
+                 SLIDE 6 — SMART ROUTING
+                 =========================================== -->
+            <section class="slide slide-routing" id="slide-6">
+                <div class="topbar">
+                    <span class="topbar-label">Model Selection</span>
+                    <span class="topbar-pill">Router</span>
+                </div>
+
+                <div class="content-area">
+                    <h2 class="display-md" style="margin-bottom:20px;">Complexity Router</h2>
+
+                    <div class="routing-table">
+                        <div class="rt-head">
+                            <div style="font-size:22px;">Tier</div>
+                            <div style="font-size:22px;">Score Range</div>
+                            <div style="font-size:22px;">Routed To</div>
+                        </div>
+                        <div class="rt-row rt-row-green">
+                            <div class="rt-tier" style="font-size:24px;">Simple</div>
+                            <div class="rt-score" style="font-size:20px;">0.00 – 0.20</div>
+                            <div class="rt-model" style="font-size:20px;">deepseek-flash</div>
+                        </div>
+                        <div class="rt-row rt-row-cream">
+                            <div class="rt-tier" style="font-size:24px;">Medium</div>
+                            <div class="rt-score" style="font-size:20px;">0.20 – 0.45</div>
+                            <div class="rt-model" style="font-size:20px;">deepseek-flash (default)</div>
+                        </div>
+                        <div class="rt-row rt-row-pink">
+                            <div class="rt-tier" style="font-size:24px;">Complex</div>
+                            <div class="rt-score" style="font-size:20px;">0.45 – 0.65</div>
+                            <div class="rt-model" style="font-size:20px;">deepseek-pro</div>
+                        </div>
+                        <div class="rt-row rt-row-orange">
+                            <div class="rt-tier" style="font-size:24px;">Reasoning</div>
+                            <div class="rt-score" style="font-size:20px;">0.65+</div>
+                            <div class="rt-model" style="font-size:20px;">deepseek-pro</div>
+                        </div>
+                    </div>
+
+                    <div class="fallback-callout" style="margin-top:18px; padding:14px 24px;">
+                        <span class="fb-label" style="font-size:17px;">⚡ Auto-Fallback</span>
+                        <span class="fb-desc" style="font-size:19px;">Multi-deployment order priority. If Gemini fails (401, 429, timeout), requests auto-fallback to DeepSeek — zero client errors.</span>
+                    </div>
+
+                    <div style="display:flex; gap:20px; margin-top:16px;">
+                        <div class="stat-cell stat-yellow" style="flex:1; padding:18px 22px;">
+                            <div class="stat-num" style="font-size:42px;">7</div>
+                            <div class="stat-label" style="font-size:15px;">Classifier Dimensions</div>
+                            <div class="stat-desc" style="font-size:17px;">Step-by-step, yes/no, API ref, domain-specific, creative, multi-part, clarification</div>
+                        </div>
+                        <div class="stat-cell stat-green" style="flex:1; padding:18px 22px;">
+                            <div class="stat-num" style="font-size:42px;">&lt;1ms</div>
+                            <div class="stat-label" style="font-size:15px;">Classification Time</div>
+                            <div class="stat-desc" style="font-size:17px;">Rule-based, sub-millisecond. No LLM call needed to decide which LLM to call.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="slide-meta">
+                    <span class="meta-label">Team-Smart-Router · Rule-Based</span>
+                    <span class="meta-pages">06<span class="meta-dot"></span>11</span>
+                </div>
+            </section>
+
+            <!-- ===========================================
+                 SLIDE 7 — COMPRESSION + SKILLS
+                 =========================================== -->
+            <section class="slide slide-compress" id="slide-7">
+                <div class="topbar">
+                    <span class="topbar-label">Optimization</span>
+                    <span class="topbar-pill">Compress + Skills</span>
+                </div>
+
+                <div class="content-area">
+                    <h2 class="display-md" style="margin-bottom:16px;">Compression &amp; Skills</h2>
+
+                    <div class="two-col" style="margin-top:0;">
+                        <!-- Left: Compression -->
+                        <div class="col" style="gap:12px;">
+                            <div class="kicker" style="font-size:17px; padding:6px 14px;">Compression</div>
+                            <div class="stat-cell stat-cream" style="padding:22px 28px; box-shadow: 24px 24px 0 var(--orange), 24px 24px 0 4px var(--ink);">
+                                <div class="stat-num" style="font-size:64px;">60–95%</div>
+                                <div class="stat-label" style="font-size:16px;">Token Reduction</div>
+                                <div class="stat-desc" style="font-size:17px;">SmartCrusher (JSON) + CodeCompressor (AST) + CacheAligner (KV-cache) work together to compress prompts before they reach the LLM.</div>
+                            </div>
+
+                            <div class="comp-bar-wrap" style="padding:18px 24px;">
+                                <div class="comp-bar-label" style="font-size:15px; margin-bottom:8px;">SmartCrusher · JSON payloads</div>
+                                <div class="comp-bar-track" style="height:36px;">
+                                    <div class="comp-bar-fill" style="width:85%;"></div>
+                                    <span class="comp-bar-pct" style="font-size:22px;">85%</span>
+                                </div>
+                            </div>
+                            <div class="comp-bar-wrap" style="padding:18px 24px;">
+                                <div class="comp-bar-label" style="font-size:15px; margin-bottom:8px;">CodeCompressor · AST-aware code</div>
+                                <div class="comp-bar-track" style="height:36px;">
+                                    <div class="comp-bar-fill" style="width:70%;"></div>
+                                    <span class="comp-bar-pct" style="font-size:22px;">70%</span>
+                                </div>
+                            </div>
+                            <div class="comp-bar-wrap" style="padding:18px 24px;">
+                                <div class="comp-bar-label" style="font-size:15px; margin-bottom:8px;">CacheAligner · KV-cache alignment</div>
+                                <div class="comp-bar-track" style="height:36px;">
+                                    <div class="comp-bar-fill" style="width:60%;"></div>
+                                    <span class="comp-bar-pct" style="font-size:22px;">60%</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right: Skills -->
+                        <div class="col" style="gap:12px;">
+                            <div class="kicker" style="font-size:17px; padding:6px 14px;">Skill Injection</div>
+                            <div class="stat-cell stat-pink" style="padding:22px 28px;">
+                                <div class="stat-num" style="font-size:64px;">$trigger</div>
+                                <div class="stat-label" style="font-size:16px;">Activate Skills Mid-Conversation</div>
+                                <div class="stat-desc" style="font-size:17px;">Type $ponytail or $caveman in any message — the injector strips the token, loads the skill markdown, and inserts it into the system prompt before compression. Multiple triggers per message, alphabetically merged.</div>
+                            </div>
+
+                            <div class="skill-tags">
+                                <span class="skill-tag" style="font-size:18px;">$ponytail</span>
+                                <span class="skill-tag" style="font-size:18px;">$caveman</span>
+                                <span class="skill-tag" style="font-size:18px;">$your-skill</span>
+                            </div>
+
+                            <div class="stat-cell stat-green" style="padding:18px 22px;">
+                                <div class="stat-label" style="font-size:16px;">Response Header</div>
+                                <div class="stat-desc" style="font-family:var(--font-mono);font-size:18px;letter-spacing:0.03em;">X-GateMid-Skill-Applied: ponytail, caveman</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="slide-meta">
+                    <span class="meta-label">Compress After Injection · ~150–250 Net Tokens</span>
+                    <span class="meta-pages">07<span class="meta-dot"></span>11</span>
+                </div>
+            </section>
+
+            <!-- ===========================================
+                 SLIDE 8 — QUALITY SCORING
+                 =========================================== -->
+            <section class="slide slide-scoring" id="slide-8">
+                <div class="topbar">
+                    <span class="topbar-label">Evaluation</span>
+                    <span class="topbar-pill">Ragas Scoring</span>
+                </div>
+
+                <div class="content-area">
+                    <h2 class="display-md">Quality Scoring</h2>
+
+                    <div class="metric-grid">
+                        <div class="metric-cell metric-cream">
+                            <div class="metric-weight">Weight 0.3</div>
+                            <div class="metric-name">Faithfulness</div>
+                            <div class="metric-desc">Is the answer grounded in retrieved context? Prevents hallucination. Skipped when no context is available.</div>
+                        </div>
+                        <div class="metric-cell metric-pink">
+                            <div class="metric-weight">Weight 0.3</div>
+                            <div class="metric-name">Answer Relevancy</div>
+                            <div class="metric-desc">Does the answer actually address the question? Always scored — the only metric available for context-free calls.</div>
+                        </div>
+                        <div class="metric-cell metric-green">
+                            <div class="metric-weight">Weight 0.2</div>
+                            <div class="metric-name">Context Precision</div>
+                            <div class="metric-desc">Is every piece of retrieved context actually useful? Eliminates noise from over-fetched context.</div>
+                        </div>
+                        <div class="metric-cell metric-orange">
+                            <div class="metric-weight">Weight 0.2</div>
+                            <div class="metric-name">Context Recall</div>
+                            <div class="metric-desc">Does the answer cover everything in the context? Requires ground truth. Skipped when unavailable.</div>
+                        </div>
+                    </div>
+
+                    <div class="score-pipeline">
+                        <span style="font-family:var(--font-mono);font-size:18px;font-weight:400;letter-spacing:0.06em;color:var(--ink);">Pipeline:</span>
+                        <div class="score-node">LLM Response</div>
+                        <span class="score-arrow">→</span>
+                        <div class="score-node pink">RagasLogger</div>
+                        <span class="score-arrow">→</span>
+                        <div class="score-node">Redis Queue</div>
+                        <span class="score-arrow">→</span>
+                        <div class="score-node pink">Eval Worker</div>
+                        <span class="score-arrow">→</span>
+                        <div class="score-node">Leaderboards</div>
+                    </div>
+
+                    <div style="margin-top:20px;font-family:var(--font-body);font-size:20px;color:var(--ink-2);line-height:1.4;">
+                        Dynamic weight rebalancing: when a metric is unavailable, its weight redistributes so the composite score always normalizes to [0, 1]. DeepSeek as LLM judge, Gemini for embeddings.
+                    </div>
+                </div>
+
+                <div class="slide-meta">
+                    <span class="meta-label">Async · Fire-and-Forget · No Latency Impact</span>
+                    <span class="meta-pages">08<span class="meta-dot"></span>11</span>
+                </div>
+            </section>
+
+            <!-- ===========================================
+                 SLIDE 9 — OBSERVABILITY
+                 =========================================== -->
+            <section class="slide slide-observe" id="slide-9">
+                <div class="topbar">
+                    <span class="topbar-label">Monitoring</span>
+                    <span class="topbar-pill">Observability</span>
+                </div>
+
+                <div class="content-area">
+                    <h2 class="display-md">Observability</h2>
+
+                    <div class="tui-grid">
+                        <div class="tui-card tui-cream" style="box-shadow: 24px 24px 0 var(--orange), 24px 24px 0 4px var(--ink);">
+                            <div class="tui-icon">TUI Board</div>
+                            <div class="tui-name">Score Board</div>
+                            <div class="tui-cmd">eval.cli score</div>
+                            <div class="tui-desc">Interactive best/worst scoring calls. Filter by category or prompt version. Full detail view: composite score, per-metric breakdown, complete Q&A.</div>
+                        </div>
+                        <div class="tui-card tui-yellow">
+                            <div class="tui-icon">TUI Board</div>
+                            <div class="tui-name">Headroom Stats</div>
+                            <div class="tui-cmd">eval.cli headroom</div>
+                            <div class="tui-desc">Tokens before/after/saved per day. Running grand totals. Drill into per-call detail: compression ratio, which transforms applied.</div>
+                        </div>
+                        <div class="tui-card tui-pink">
+                            <div class="tui-icon">TUI Board</div>
+                            <div class="tui-name">Fallback Events</div>
+                            <div class="tui-cmd">eval.cli fallback</div>
+                            <div class="tui-desc">Every non-primary deployment served. Model group, fallback type, original exception. Daily breakdowns with full error detail.</div>
+                        </div>
+                        <div class="tui-card tui-orange">
+                            <div class="tui-icon">TUI Board</div>
+                            <div class="tui-name">Cache Impact</div>
+                            <div class="tui-cmd">eval.cli router</div>
+                            <div class="tui-desc">Session model-switch analysis. Estimated cache-miss costs. Frequency of pair switches. PRD §4 report with p50/p90/max gaps.</div>
+                        </div>
+                    </div>
+
+                    <div class="key-hint">Controls: ↑↓ scroll · ←→ switch views · Enter detail · q quit · Rich TUI (keyboard-navigable)</div>
+                </div>
+
+                <div class="slide-meta">
+                    <span class="meta-label">4 Interactive TUI Dashboards</span>
+                    <span class="meta-pages">09<span class="meta-dot"></span>11</span>
+                </div>
+            </section>
+
+            <!-- ===========================================
+                 SLIDE 10 — QUICK START
+                 =========================================== -->
+            <section class="slide slide-setup" id="slide-10">
+                <div class="topbar">
+                    <span class="topbar-label">Get Started</span>
+                    <span class="topbar-pill">Setup</span>
+                </div>
+
+                <div class="content-area">
+                    <h2 class="display-md">Quick Start</h2>
+
+                    <div class="setup-steps">
+                        <div class="step-card step-card-cream">
+                            <div class="step-num">1</div>
+                            <div class="step-title">Clone &amp; Config</div>
+                            <div class="step-desc">Set API keys and choose models in one shot.</div>
+                            <div class="code-block">
+                                <span class="comment"># Interactive setup</span><br>
+                                ./quick-setup.sh<br><br>
+                                <span class="comment"># Or manual</span><br>
+                                cp .env.example .env<br>
+                                <span class="comment"># Edit with your keys</span>
+                            </div>
+                        </div>
+                        <div class="step-card step-card-pink">
+                            <div class="step-num">2</div>
+                            <div class="step-title">Launch</div>
+                            <div class="step-desc">Three containers, one command.</div>
+                            <div class="code-block">
+                                docker compose up -d<br><br>
+                                <span class="comment"># Health check</span><br>
+                                curl -s localhost:4000/health<br>
+                                <span class="comment"># → "OK"</span>
+                            </div>
+                        </div>
+                        <div class="step-card step-card-green">
+                            <div class="step-num">3</div>
+                            <div class="step-title">Connect Tool</div>
+                            <div class="step-desc">Point Claude Code or Open Code at localhost:4000.</div>
+                            <div class="code-block">
+                                <span class="comment"># Claude Code</span><br>
+                                export ANTHROPIC_BASE_URL=<br>
+                                "http://localhost:4000"<br>
+                                export ANTHROPIC_MODEL=<br>
+                                "team-smart-router"
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="display:flex; gap:20px; margin-top:24px;">
+                        <div class="stat-cell stat-yellow" style="flex:1;">
+                            <div class="stat-num" style="font-size:40px;">1</div>
+                            <div class="stat-label">Command to Start</div>
+                            <div class="stat-desc">docker compose up -d</div>
+                        </div>
+                        <div class="stat-cell stat-orange" style="flex:1;">
+                            <div class="stat-num" style="font-size:40px;">0</div>
+                            <div class="stat-label">Config Edits Required</div>
+                            <div class="stat-desc">Works out of the box with smart defaults</div>
+                        </div>
+                        <div class="stat-cell stat-cream" style="flex:1;">
+                            <div class="stat-num" style="font-size:40px;">12+</div>
+                            <div class="stat-label">Provider Models</div>
+                            <div class="stat-desc">Gemini, DeepSeek, Claude, GPT, Copilot, Llama</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="slide-meta">
+                    <span class="meta-label">Drop-in Proxy · Zero-Config Default</span>
+                    <span class="meta-pages">10<span class="meta-dot"></span>11</span>
+                </div>
+            </section>
+
+            <!-- ===========================================
+                 SLIDE 11 — CLOSING (GREEN)
+                 =========================================== -->
+            <section class="slide slide-closing" id="slide-11">
+                <div class="topbar">
+                    <span class="topbar-label">Summary</span>
+                    <span class="topbar-pill" style="border-color:var(--cream);">Closing</span>
+                </div>
+
+                <div class="closing-content">
+                    <h2 class="display-jumbo">GateMid</h2>
+                    <p class="closing-strap">Middleware for your LLM traffic. Compress. Route. Score. Observe. All from localhost:4000 — with zero added latency and zero config changes for the tools you already use.</p>
+                </div>
+
+                <div class="stamp">
+                    <div class="stamp-inner">
+                        <div class="stamp-num">OK</div>
+                        <div class="stamp-label">Ready</div>
+                    </div>
+                </div>
+
+                <div class="closing-stats">
+                    <div class="closing-stat">
+                        <div class="cs-num">60–95%</div>
+                        <div class="cs-label">Cheaper</div>
+                    </div>
+                    <div class="closing-stat">
+                        <div class="cs-num">&lt;1ms</div>
+                        <div class="cs-label">Faster</div>
+                    </div>
+                    <div class="closing-stat">
+                        <div class="cs-num">4</div>
+                        <div class="cs-label">Smarter</div>
+                    </div>
+                    <div class="closing-stat">
+                        <div class="cs-num">100%</div>
+                        <div class="cs-label">Observable</div>
+                    </div>
+                </div>
+
+                <div class="slide-meta">
+                    <span class="meta-label">github.com · GateMid</span>
+                    <span class="meta-pages">11<span class="meta-dot"></span>11</span>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- Inline Edit Toggle -->
+    <div class="edit-hotzone"></div>
+    <button class="edit-toggle" id="editToggle" title="Edit mode (E)">✏️ Edit</button>
+
+    <!-- Deck Controls -->
+    <div class="deck-controls">
+        <button id="prevBtn">← Prev</button>
+        <span class="page-indicator" id="pageIndicator">1 / 10</span>
+        <button id="nextBtn">Next →</button>
+    </div>
+
+    <script>
+        /* ===========================================
+           SLIDE PRESENTATION CONTROLLER
+           =========================================== */
+        class SlidePresentation {
+            constructor() {
+                this.slides = document.querySelectorAll('.slide');
+                this.currentSlide = 0;
+                this.stage = document.getElementById('deckStage');
+                this.indicator = document.getElementById('pageIndicator');
+                this.setupStageScale();
+                this.setupKeyboardNav();
+                this.setupTouchNav();
+                this.setupButtons();
+                this.showSlide(0);
+            }
+
+            setupStageScale() {
+                const scale = () => {
+                    const factor = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+                    const x = (window.innerWidth - 1920 * factor) / 2;
+                    const y = (window.innerHeight - 1080 * factor) / 2;
+                    this.stage.style.transform = `translate(${x}px, ${y}px) scale(${factor})`;
+                };
+                scale();
+                window.addEventListener('resize', scale);
+            }
+
+            setupKeyboardNav() {
+                document.addEventListener('keydown', (e) => {
+                    if (e.target.getAttribute('contenteditable')) return;
+                    if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ' || e.key === 'PageDown') {
+                        e.preventDefault();
+                        this.next();
+                    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp') {
+                        e.preventDefault();
+                        this.prev();
+                    } else if (e.key === 'Home') {
+                        e.preventDefault();
+                        this.showSlide(0);
+                    } else if (e.key === 'End') {
+                        e.preventDefault();
+                        this.showSlide(this.slides.length - 1);
+                    }
+                });
+            }
+
+            setupTouchNav() {
+                let startX = 0, startY = 0;
+                document.addEventListener('touchstart', (e) => {
+                    startX = e.touches[0].clientX;
+                    startY = e.touches[0].clientY;
+                });
+                document.addEventListener('touchend', (e) => {
+                    const dx = e.changedTouches[0].clientX - startX;
+                    const dy = e.changedTouches[0].clientY - startY;
+                    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) {
+                        dx > 0 ? this.prev() : this.next();
+                    } else if (dy > 50) {
+                        this.next();
+                    } else if (dy < -50) {
+                        this.prev();
+                    }
+                });
+            }
+
+            setupButtons() {
+                document.getElementById('prevBtn').addEventListener('click', () => this.prev());
+                document.getElementById('nextBtn').addEventListener('click', () => this.next());
+            }
+
+            showSlide(index) {
+                this.currentSlide = Math.max(0, Math.min(index, this.slides.length - 1));
+                this.slides.forEach((slide, i) => {
+                    slide.classList.toggle('active', i === this.currentSlide);
+                    slide.classList.toggle('visible', i === this.currentSlide);
+                });
+                this.indicator.textContent = `${this.currentSlide + 1} / ${this.slides.length}`;
+            }
+
+            next() { this.showSlide(this.currentSlide + 1); }
+            prev() { this.showSlide(this.currentSlide - 1); }
+        }
+
+        const presentation = new SlidePresentation();
+
+        /* ===========================================
+           INLINE EDITING
+           =========================================== */
+        const editToggle = document.getElementById('editToggle');
+        const hotzone = document.querySelector('.edit-hotzone');
+        let hideTimeout = null;
+        let isEditing = false;
+
+        function toggleEditMode() {
+            isEditing = !isEditing;
+            editToggle.classList.toggle('active', isEditing);
+            editToggle.textContent = isEditing ? '✓ Done' : '✏️ Edit';
+
+            document.querySelectorAll('.slide').forEach(slide => {
+                if (isEditing) {
+                    slide.setAttribute('contenteditable', 'true');
+                } else {
+                    slide.removeAttribute('contenteditable');
+                    // Auto-save to localStorage
+                    try {
+                        const content = {};
+                        document.querySelectorAll('.slide').forEach((s, i) => {
+                            content['slide-' + i] = s.innerHTML;
+                        });
+                        localStorage.setItem('gatemid-deck-backup', JSON.stringify(content));
+                    } catch(e) {}
+                }
+            });
+
+            if (!isEditing) {
+                editToggle.classList.remove('show');
+            }
+        }
+
+        editToggle.addEventListener('click', toggleEditMode);
+
+        hotzone.addEventListener('mouseenter', () => {
+            clearTimeout(hideTimeout);
+            editToggle.classList.add('show');
+        });
+        hotzone.addEventListener('mouseleave', () => {
+            hideTimeout = setTimeout(() => {
+                if (!isEditing) editToggle.classList.remove('show');
+            }, 400);
+        });
+        editToggle.addEventListener('mouseenter', () => clearTimeout(hideTimeout));
+        editToggle.addEventListener('mouseleave', () => {
+            hideTimeout = setTimeout(() => {
+                if (!isEditing) editToggle.classList.remove('show');
+            }, 400);
+        });
+        hotzone.addEventListener('click', toggleEditMode);
+
+        document.addEventListener('keydown', (e) => {
+            if ((e.key === 'e' || e.key === 'E') && !e.target.getAttribute('contenteditable') && !e.ctrlKey && !e.metaKey) {
+                toggleEditMode();
+            }
+            // Ctrl+S to save
+            if ((e.ctrlKey || e.metaKey) && e.key === 's' && isEditing) {
+                e.preventDefault();
+                const content = {};
+                document.querySelectorAll('.slide').forEach((s, i) => {
+                    content['slide-' + i] = s.innerHTML;
+                });
+                localStorage.setItem('gatemid-deck-backup', JSON.stringify(content));
+                editToggle.textContent = '💾 Saved';
+                setTimeout(() => { editToggle.textContent = '✓ Done'; }, 1000);
+            }
+        });
+    </script>
+</body>
+</html>
