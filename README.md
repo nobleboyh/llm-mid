@@ -84,19 +84,14 @@ flowchart LR
 
 ## Quick Start
 
-### 1. Clone and set API keys
+### 1. One-shot automated setup (recommended)
 
 ```bash
 git clone <repo-url> llm-mid && cd llm-mid
-cp .env.example .env
-# Edit .env with your actual GEMINI_API_KEY and DEEPSEEK_API_KEY
+./quick-setup.sh
 ```
 
-### 2. Start the gateway
-
-```bash
-docker compose up -d
-```
+`./quick-setup.sh` is the **one-shot bootstrap** — it walks you through provider selection (Gemini, DeepSeek, Anthropic, OpenAI, GitHub Copilot, GitHub Models), API key entry, model tier assignment, writes `.env` + `litellm_config.yaml`, starts Docker Compose, and optionally configures your coding agent (Claude Code / OpenCode).
 
 Verify it's running:
 
@@ -104,27 +99,36 @@ Verify it's running:
 curl -s http://localhost:4000/health -H "Authorization: Bearer sk-local-dev-key" | head -c 200
 ```
 
-### 3. Quick tool setup (pick one)
-
-**Option A — Automated setup script:**
-
-```bash
-# Interactive — configures everything (providers, keys, tiers, Docker, agents)
-./quick-setup.sh
-```
-
-`./quick-setup.sh` is the **one-shot bootstrap** — it walks you through provider selection, API key entry, model tier assignment, writes `.env` + `litellm_config.yaml`, starts Docker Compose, and optionally configures your coding agent (Claude Code / OpenCode).
+### 2. Manual setup
 
 <details>
-<summary><strong>Option B — Manual setup</strong> (click to expand)</summary>
+<summary>Click to expand — clone, configure, and start manually</summary>
 
-## Claude Code Setup
+#### 2a. Clone and set API keys
+
+```bash
+git clone <repo-url> llm-mid && cd llm-mid
+cp .env.example .env
+# Edit .env with your actual GEMINI_API_KEY and DEEPSEEK_API_KEY
+```
+
+#### 2b. Start the gateway
+
+```bash
+docker compose up -d
+```
+
+#### 2c. Configure your coding agent
+
+---
+
+### Claude Code Setup
 
 Configure Claude Code to route through GateMid. All prompts get compressed and auto-routed to the best model.
 
-> **Quick alternative:** `./quick-setup.sh` does this automatically (see [Quick Start](#3-quick-tool-setup-pick-one)).
+> **Quick alternative:** `./quick-setup.sh` does this automatically.
 
-### Step 1: Configure environment
+#### Step 1: Configure environment
 
 Add to your shell profile (`~/.zshrc`, `~/.bashrc`, etc.):
 
@@ -142,7 +146,7 @@ Then reload:
 source ~/.zshrc  # or ~/.bashrc
 ```
 
-### Step 2: Run Claude Code
+#### Step 2: Run Claude Code
 
 ```bash
 claude
@@ -150,7 +154,7 @@ claude
 
 Claude Code now sends all requests through GateMid. The complexity router classifies each prompt and picks the right model. Headroom compresses large contexts automatically.
 
-### How it works
+#### How it works
 
 ```mermaid
 flowchart LR
@@ -178,7 +182,7 @@ flowchart LR
 
 > **Note:** GateMid translates between Anthropic and OpenAI/Gemini/Deepseek formats automatically via LiteLLM's provider abstraction. Claude Code's tool use, streaming, and system prompts all work.
 
-### Per-project model overrides
+#### Per-project model overrides
 
 Create `~/.claude/settings.json` to pin specific models per project or override the router:
 
@@ -194,7 +198,7 @@ Create `~/.claude/settings.json` to pin specific models per project or override 
 }
 ```
 
-### Bypassing the router
+#### Bypassing the router
 
 To use a specific model directly (no auto-routing):
 
@@ -207,13 +211,13 @@ Available models (configurable via `./quick-setup.sh`): `gemini-flash`, `deepsee
 
 ---
 
-## Open Code Setup
+### Open Code Setup
 
 Open Code supports OpenAI-compatible backends natively.
 
-> **Quick alternative:** `./quick-setup.sh` does this automatically (see [Quick Start](#3-quick-tool-setup-pick-one)).
+> **Quick alternative:** `./quick-setup.sh` does this automatically.
 
-### Step 1: Configure environment
+#### Step 1: Configure environment
 
 Add to your shell profile:
 
@@ -222,7 +226,7 @@ export OPENAI_BASE_URL="http://localhost:4000/v1"
 export OPENAI_API_KEY="sk-local-dev-key"
 ```
 
-### Step 2: Create Open Code config
+#### Step 2: Create Open Code config
 
 Create `~/.config/opencode/opencode.json`:
 
@@ -249,7 +253,7 @@ Create `~/.config/opencode/opencode.json`:
 }
 ```
 
-### Step 3: Run Open Code
+#### Step 3: Run Open Code
 
 ```bash
 opencode
