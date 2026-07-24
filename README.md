@@ -109,17 +109,11 @@ curl -s http://localhost:4000/health -H "Authorization: Bearer sk-local-dev-key"
 **Option A — Automated setup script:**
 
 ```bash
-# Interactive — picks the tool for you
-./setup-gatemid.sh
-
-# Or non-interactive with env vars
-GATEMID_URL=http://localhost:4000 GATEMID_API_KEY=sk-local-dev-key ./setup-gatemid.sh
-
-# Revert when done
-./setup-gatemid.sh --uninstall
+# Interactive — configures everything (providers, keys, tiers, Docker, agents)
+./quick-setup.sh
 ```
 
-The script supports **Claude Code** and **OpenCode** — it writes the correct config file for each, creates a timestamped backup of your existing settings, and handles uninstall cleanly.
+`./quick-setup.sh` is the **one-shot bootstrap** — it walks you through provider selection, API key entry, model tier assignment, writes `.env` + `litellm_config.yaml`, starts Docker Compose, and optionally configures your coding agent (Claude Code / OpenCode).
 
 <details>
 <summary><strong>Option B — Manual setup</strong> (click to expand)</summary>
@@ -128,7 +122,7 @@ The script supports **Claude Code** and **OpenCode** — it writes the correct c
 
 Configure Claude Code to route through GateMid. All prompts get compressed and auto-routed to the best model.
 
-> **Quick alternative:** `./setup-gatemid.sh` does this automatically (see [Quick Start](#3-quick-tool-setup-pick-one)).
+> **Quick alternative:** `./quick-setup.sh` does this automatically (see [Quick Start](#3-quick-tool-setup-pick-one)).
 
 ### Step 1: Configure environment
 
@@ -217,7 +211,7 @@ Available models (configurable via `./quick-setup.sh`): `gemini-flash`, `deepsee
 
 Open Code supports OpenAI-compatible backends natively.
 
-> **Quick alternative:** `./setup-gatemid.sh` does this automatically (see [Quick Start](#3-quick-tool-setup-pick-one)).
+> **Quick alternative:** `./quick-setup.sh` does this automatically (see [Quick Start](#3-quick-tool-setup-pick-one)).
 
 ### Step 1: Configure environment
 
@@ -737,3 +731,20 @@ echo $ANTHROPIC_API_KEY
 # Verify the OpenAI-compatible endpoint
 curl -s http://localhost:4000/v1/models -H "Authorization: Bearer sk-local-dev-key"
 ```
+
+## Uninstallation
+
+### Stop & remove Docker services
+
+```bash
+docker compose down -v   # -v removes Redis volumes (scores, stats)
+```
+
+### Revert coding agent config
+
+```bash
+# Claude Code — removes gatemid proxy env vars from settings.json
+./setup-gatemid.sh --uninstall
+```
+
+Re-run `./quick-setup.sh` any time to reconfigure from scratch.
