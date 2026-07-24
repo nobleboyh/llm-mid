@@ -73,6 +73,13 @@ def _fmt_num(n: int) -> str:
     return f"{n:,}"
 
 
+def _fmt_ts_last(ts: str) -> str:
+    """Format ISO timestamp to compact MM-DD HH:MM display."""
+    if len(ts) >= 16:
+        return ts[5:10] + " " + ts[11:16]  # "2026-07-15T14:30:00" → "07-15 14:30"
+    return ts
+
+
 def _fmt_pct(ratio: float) -> str:
     """Format ratio as percentage string."""
     return f"{ratio * 100:.1f}%"
@@ -257,8 +264,9 @@ def _render_sessions_overview(
     col = Text()
     col.append(f" {'Session':<22}", style="bold underline")
     col.append(f"{'Sw':>4}", style="bold underline")
-    col.append(f" {'Models':<42}", style="bold underline")
-    col.append(f"{'Events':>6}", style="bold underline")
+    col.append(f" {'Models':<37}", style="bold underline")
+    col.append(f"{'Events':>8}", style="bold underline")
+    col.append(f" {'Updated':<13}", style="bold underline")
     col.append(f"{'Cach%':>6}", style="bold underline")
     col.append(f"{'Cost':>8}", style="bold underline")
     lines.append(col)
@@ -274,8 +282,10 @@ def _render_sessions_overview(
         row.append(f"{display_key:<22}", style=style)
         row.append(f"{s['switch_count']:>4}", style=style)
         models = _session_models_display(s["model_sequence"])
-        row.append(f" {models:<42}", style=style)
-        row.append(f"{s['event_count']:>6}", style=style)
+        row.append(f" {models:<37}", style=style)
+        row.append(f"{s['event_count']:>8}", style=style)
+        last_updated = _fmt_ts_last(s.get("last_ts", ""))
+        row.append(f" {last_updated:<13}", style=style)
         cache_pct = s.get("cache_pct", 0)
         cache_style = f"bold green {style}" if cache_pct >= 80 else f"yellow {style}" if cache_pct > 0 else f"dim {style}"
         row.append(f"{cache_pct:>5.0f}%", style=cache_style)
