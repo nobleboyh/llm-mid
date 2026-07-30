@@ -14,6 +14,7 @@ RUN pip install --default-timeout=120 --no-cache-dir -r requirements.txt
 COPY entrypoint.py .
 COPY guardrails ./guardrails/
 COPY skills ./proxy/skills/
+COPY callbacks ./proxy/callbacks/
 COPY __init__.py ./proxy/
 COPY callback.py ./proxy/
 COPY fallback_logger.py ./proxy/
