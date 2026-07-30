@@ -207,7 +207,29 @@ export ANTHROPIC_MODEL="deepseek-pro"
 claude
 ```
 
-Available models (configurable via `./quick-setup.sh`): `gemini-flash`, `deepseek-flash`, `gemini-pro`, `deepseek-pro`, `claude-sonnet`, `claude-fable`, `claude-opus`, `openai-gpt4o`, `openai-o3`, `copilot-gpt4`, `copilot-codex`, `github-llama`, `team-smart-router`
+#### Using a local provider with Claude Code
+
+After setting up via `quick-setup.sh`, point Claude Code to your local model through GateMid:
+
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "http://localhost:4000",
+    "ANTHROPIC_API_KEY": "sk-local-dev-key",
+    "ANTHROPIC_MODEL": "ollama"
+  }
+}
+```
+
+Replace `ollama` with `llamacpp`, `lmstudio`, or `omlx` depending on which local
+provider you configured. The model name comes from the `*_MODEL` env var you set
+during setup.
+
+> **GateMid translates from Anthropic format to OpenAI-compatible format**
+> automatically — Claude Code sends Anthropic-format requests and GateMid adapts
+> them for the local provider's OpenAI-compatible API.
+
+Available models (configurable via `./quick-setup.sh`): `gemini-flash`, `deepseek-flash`, `gemini-pro`, `deepseek-pro`, `claude-sonnet`, `claude-fable`, `claude-opus`, `openai-gpt4o`, `openai-o3`, `copilot-gpt4`, `copilot-codex`, `github-llama`, `ollama`, `llamacpp`, `lmstudio`, `omlx`, `team-smart-router`
 
 ---
 
@@ -246,7 +268,11 @@ Create `~/.config/opencode/opencode.json`:
         "gemini-flash": { "name": "gemini-flash" },
         "gemini-pro": { "name": "gemini-pro" },
         "deepseek-flash": { "name": "deepseek-flash" },
-        "deepseek-pro": { "name": "deepseek-pro" }
+        "deepseek-pro": { "name": "deepseek-pro" },
+        "ollama": { "name": "ollama" },
+        "llamacpp": { "name": "llamacpp" },
+        "lmstudio": { "name": "lmstudio" },
+        "omlx": { "name": "omlx" }
       }
     }
   }
@@ -341,6 +367,11 @@ When you run `quick-setup.sh`, it detects if both Gemini and DeepSeek are enable
 ## Scoring & Evaluation
 
 Every LLM response is scored asynchronously for quality using Ragas. The eval-worker runs in a separate container so scoring never impacts request latency.
+
+> **Local-only setups:** Ragas evaluation requires Gemini embeddings for scoring.
+> If you're running GateMid with only local providers (no Gemini), eval scoring is
+> skipped (`RAGAS_EVAL_ENABLED=false`). Responses still route through GateMid
+> normally — compression, skill injection, and complexity routing all work.
 
 ### Scoring pipeline
 
@@ -735,6 +766,30 @@ echo $ANTHROPIC_API_KEY
 # Verify the OpenAI-compatible endpoint
 curl -s http://localhost:4000/v1/models -H "Authorization: Bearer sk-local-dev-key"
 ```
+
+### Local provider (Ollama/llama.cpp/LM Studio/oMLX) not responding
+
+```bash
+# 1. Verify the local server is running
+curl http://localhost:11434/api/tags                    # Ollama
+curl http://localhost:8080/v1/models                    # llama.cpp
+curl http://localhost:1234/v1/models                    # LM Studio
+curl http://localhost:8000/v1/models                    # oMLX
+
+# 2. Check the model name in .env matches what your server serves
+#    Ollama:  run `ollama list` to see all available models
+#    llama.cpp:  the model name is printed on server startup
+#    oMLX:   check ~/.omlx/models/ for available model directories
+
+# 3. If GateMid runs in Docker, use host.docker.internal instead of localhost:
+#    OLLAMA_API_BASE=http://host.docker.internal:11434
+
+# 4. Check GateMid logs for local provider errors
+docker compose logs litellm | grep -i "LocalModel"
+```
+
+**Note:** If you see `ERROR [LocalModel]` in the logs, the model name in `.env` doesn't
+match what your local server serves. Update `*_MODEL` and restart GateMid.
 
 ## Uninstallation
 

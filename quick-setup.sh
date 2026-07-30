@@ -152,6 +152,10 @@ PROVIDER_REGISTRY=(
   "openai|OpenAI (Codex CLI)|OPENAI_API_KEY|openai-gpt4o,openai-o3"
   "copilot|GitHub Copilot||copilot-gpt4,copilot-codex"
   "github-models|GitHub Models (Marketplace)|GITHUB_API_KEY|github-llama"
+  "ollama|Ollama (local)||ollama"
+  "llamacpp|llama.cpp (local)||llamacpp"
+  "lmstudio|LM Studio (local)||lmstudio"
+  "omlx|oMLX (Apple Silicon)||omlx"
 )
 
 # Full model list with their litellm backend mapping
@@ -170,6 +174,10 @@ model_backend() {
         copilot-gpt4)    echo "github_copilot/gpt-4" ;;
         copilot-codex)   echo "github_copilot/gpt-5.1-codex" ;;
         github-llama)    echo "github/Llama-3.2-11B-Vision-Instruct" ;;
+        ollama)          echo "ollama/${OLLAMA_MODEL:-llama3}" ;;
+        llamacpp)        echo "openai/${LLAMACPP_MODEL:-llama-3.2-3b}" ;;
+        lmstudio)        echo "lm_studio/${LMSTUDIO_MODEL:-model}" ;;
+        omlx)            echo "openai/${OMLX_MODEL:-llama}" ;;
         *)               echo "unknown/$1" ;;
     esac
 }
@@ -183,11 +191,69 @@ model_env() {
         openai-gpt4o|openai-o3)          echo "OPENAI_API_KEY" ;;
         copilot-gpt4|copilot-codex)      echo "" ;;
         github-llama)                    echo "GITHUB_API_KEY" ;;
+        ollama|llamacpp|lmstudio|omlx)   echo "" ;;
         *)                               echo "" ;;
     esac
 }
 
-# ── Fallback configuration (set by assign_fallbacks step) ─────────────────────
+# ── Local Provider Configuration ─────────────────────────────────────────
+# Called after assign_fallbacks to collect endpoint URLs and model names.
+# These are stored as env vars in .env and used in write_litellm_config.
+configure_local_endpoints() {
+    local provider_enabled=() provider_idx=0
+    for p in ollama llamacpp lmstudio omlx; do
+        if [[ " ${ENABLED_PROVIDERS[*]} " =~ " ${p} " ]]; then
+            provider_enabled[provider_idx]="$p"
+            provider_idx=$((provider_idx + 1))
+        fi
+    done
+    if [[ provider_idx -eq 0 ]]; then
+        return
+    fi
+
+    header "Local Provider Configuration"
+
+    echo ""
+    echo "  For each local provider, enter the endpoint URL and the model name."
+    echo "  Model name is free-text — type whatever your local server serves."
+    echo ""
+
+    if [[ " ${ENABLED_PROVIDERS[*]} " =~ " ollama " ]]; then
+        echo "  ── Ollama ──"
+        OLLAMA_API_BASE=$(prompt_with_default "  Endpoint URL" "http://localhost:11434")
+        OLLAMA_MODEL=$(prompt_with_default "  Model name (e.g. llama3.1)" "llama3")
+        echo ""
+    fi
+
+    if [[ " ${ENABLED_PROVIDERS[*]} " =~ " llamacpp " ]]; then
+        echo "  ── llama.cpp ──"
+        LLAMACPP_API_BASE=$(prompt_with_default "  Endpoint URL" "http://localhost:8080")
+        LLAMACPP_MODEL=$(prompt_with_default "  Model name (e.g. llama-3.2-3b)" "llama-3.2-3b")
+        echo ""
+    fi
+
+    if [[ " ${ENABLED_PROVIDERS[*]} " =~ " lmstudio " ]]; then
+        echo "  ── LM Studio ──"
+        LMSTUDIO_API_BASE=$(prompt_with_default "  Endpoint URL" "http://localhost:1234")
+        LMSTUDIO_MODEL=$(prompt_with_default "  Model name (e.g. deepseek-coder-v2)" "model")
+        echo ""
+    fi
+
+    if [[ " ${ENABLED_PROVIDERS[*]} " =~ " omlx " ]]; then
+        echo "  ── oMLX (Apple Silicon) ──"
+        OMLX_API_BASE=$(prompt_with_default "  Endpoint URL" "http://localhost:8000")
+        OMLX_MODEL=$(prompt_with_default "  Model name (e.g. llama)" "llama")
+        echo ""
+    fi
+
+    echo ""
+    echo "  ⚠  If GateMid runs in Docker and Ollama/llama.cpp/oMLX runs on the host,"
+    echo "     use host.docker.internal instead of localhost, e.g.:"
+    echo "     http://host.docker.internal:11434"
+    echo ""
+
+    ok "local providers configured"
+}
 # Space-separated "model|fallback" pairs, e.g. "gemini-flash|deepseek-flash"
 FALLBACK_PAIRS=""
 
@@ -226,7 +292,10 @@ select_providers() {
     echo ""
 
     # Use space-separated string instead of bash array (bash 3.2 compat)
-    toggle_state="off off off off off off"
+    local provider_count="${#PROVIDER_REGISTRY[@]}"
+    toggle_state=""
+    for ((i=0; i<provider_count; i++)); do toggle_state+=" off"; done
+    toggle_state="${toggle_state# }"
 
     # Read existing .env for defaults
     if [[ -f .env ]]; then
@@ -260,7 +329,7 @@ select_providers() {
         if [[ "$choice" == "d" ]]; then
             echo ""
             break
-        elif [[ "$choice" =~ ^[1-6]$ ]]; then
+        elif [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= provider_count )); then
             # Extract label for feedback
             reg_entry="${PROVIDER_REGISTRY[$((choice - 1))]}"
             label="${reg_entry#*|}"
@@ -529,6 +598,24 @@ ENV
         echo "GITHUB_API_KEY=${GITHUB_API_KEY}" >> .env
     fi
 
+    # Local provider endpoint URLs and model names
+    if [[ " ${ENABLED_PROVIDERS[*]} " =~ " ollama " ]]; then
+        echo "OLLAMA_API_BASE=${OLLAMA_API_BASE:-http://localhost:11434}" >> .env
+        echo "OLLAMA_MODEL=${OLLAMA_MODEL:-llama3}" >> .env
+    fi
+    if [[ " ${ENABLED_PROVIDERS[*]} " =~ " llamacpp " ]]; then
+        echo "LLAMACPP_API_BASE=${LLAMACPP_API_BASE:-http://localhost:8080}" >> .env
+        echo "LLAMACPP_MODEL=${LLAMACPP_MODEL:-llama-3.2-3b}" >> .env
+    fi
+    if [[ " ${ENABLED_PROVIDERS[*]} " =~ " lmstudio " ]]; then
+        echo "LMSTUDIO_API_BASE=${LMSTUDIO_API_BASE:-http://localhost:1234}" >> .env
+        echo "LMSTUDIO_MODEL=${LMSTUDIO_MODEL:-model}" >> .env
+    fi
+    if [[ " ${ENABLED_PROVIDERS[*]} " =~ " omlx " ]]; then
+        echo "OMLX_API_BASE=${OMLX_API_BASE:-http://localhost:8000}" >> .env
+        echo "OMLX_MODEL=${OMLX_MODEL:-llama}" >> .env
+    fi
+
     if _gemini_is_configured; then
         echo "RAGAS_EVAL_ENABLED=true" >> .env
     else
@@ -570,6 +657,15 @@ YAML
             copilot_flag=true
         fi
 
+        # Check if this is a local provider
+        local is_local=false
+        for lp in ollama llamacpp lmstudio omlx; do
+            if [[ "$m" == "$lp" ]]; then
+                is_local=true
+                break
+            fi
+        done
+
         # Check if this is a codex / responses mode model
         local mode_responses=false
         if [[ "$m" == copilot-codex ]]; then
@@ -582,8 +678,31 @@ YAML
       model: ${backend}
 MODEL
 
-        if [[ -n "$env_var" && "$copilot_flag" == false ]]; then
+        if [[ -n "$env_var" && "$copilot_flag" == false && "$is_local" == false ]]; then
             echo "      api_key: \"os.environ/${env_var}\"" >> litellm_config.yaml
+        fi
+
+        # ── Local provider: add api_base + dummy api_key ──
+        if [[ "$is_local" == true ]]; then
+            local local_api_base=""
+            local local_api_key="sk-no-key"
+            case "$m" in
+                ollama)
+                    local_api_base="${OLLAMA_API_BASE:-http://localhost:11434}"
+                    local_api_key="ollama"
+                    ;;
+                llamacpp)
+                    local_api_base="${LLAMACPP_API_BASE:-http://localhost:8080}/v1"
+                    ;;
+                lmstudio)
+                    local_api_base="${LMSTUDIO_API_BASE:-http://localhost:1234}"
+                    ;;
+                omlx)
+                    local_api_base="${OMLX_API_BASE:-http://localhost:8000}/v1"
+                    ;;
+            esac
+            echo "      api_base: ${local_api_base}" >> litellm_config.yaml
+            echo "      api_key: \"${local_api_key}\"" >> litellm_config.yaml
         fi
 
         if [[ "$mode_responses" == true ]]; then
@@ -722,6 +841,7 @@ YAML
 litellm_settings:
   drop_params: true
   callbacks: ['proxy.callback.ragas_callback']
+  failure_callbacks: ['proxy.callbacks.local_provider_failure']
   num_retries: 1                    # try each deployment once before falling back
   request_timeout: 60               # fail per-attempt if no response in 30s
   allowed_fails: 3                  # cooldown model after 3 failures in a minute
@@ -954,6 +1074,7 @@ main() {
     collect_api_keys
     assign_tiers
     assign_fallbacks
+    configure_local_endpoints
     write_env
     write_litellm_config
     start_compose
