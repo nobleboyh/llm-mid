@@ -304,7 +304,17 @@ select_providers() {
     fi
 
     local idx line short label
+    local first_iteration=true
+    # Each iteration prints: 1(header) + 1(blank) + provider_count + 1(blank) + 1(footer) + 1(blank) + 1(prompt)
+    # + 1(feedback) + 1(blank) = provider_count + 8 lines
+    local lines_per_block=$((provider_count + 8))
     while true; do
+        # Replace previous menu instead of appending new one
+        if ! $first_iteration; then
+            printf "\033[%dA\033[J" "$lines_per_block"
+        fi
+        first_iteration=false
+
         echo "  Current selection:"
         echo ""
         idx=0
@@ -344,7 +354,7 @@ select_providers() {
             fi
             echo ""
         else
-            echo -e "  ${YELLOW}Invalid input — type a number (1-6) or 'd' for done${RESET}"
+            echo -e "  ${YELLOW}Invalid input — type a number (1-${provider_count}) or 'd' for done${RESET}"
             echo ""
         fi
     done
