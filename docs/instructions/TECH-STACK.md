@@ -62,6 +62,14 @@
 | `ragas-eval` | `deepseek/deepseek-v4-flash` | LLM-as-judge for Ragas scoring |
 | `team-smart-router` | `auto_router/complexity_router` | Auto-classifies and routes to tier models |
 
+### Health-check settings (`general_settings` in `litellm_config.yaml`)
+
+`background_health_checks: true` makes `GET /health` return cached results
+instead of live-probing every deployment on each call. Combined with
+`model_info.disable_background_health_check: true` on every deployment, the
+background loop probes nothing — no idle provider completions (init-007).
+Routing relies on `allowed_fails`/`cooldown_time` and `router_settings.fallbacks`.
+
 ## Docker images
 
 | Service | Base image | Key additions |
