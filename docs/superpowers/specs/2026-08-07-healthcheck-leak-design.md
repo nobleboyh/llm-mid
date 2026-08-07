@@ -53,8 +53,8 @@ stays 200, so the proxy container remains reported healthy.
 
 | File | Change |
 |------|--------|
-| `litellm_config.example.yaml` | `background_health_checks: true` in `general_settings`; `model_info.disable_background_health_check: true` on all 12 deployments |
-| `litellm_config.test.yaml` | Same — all deployments |
+| `litellm_config.example.yaml` | `background_health_checks: true` in `general_settings`; `model_info.disable_background_health_check: true` on all 10 deployments |
+| `litellm_config.test.yaml` | Same — all 8 deployments |
 | `quick-setup.sh` | `write_litellm_config()`: add `background_health_checks: true` to the `general_settings` heredoc; emit `model_info.disable_background_health_check: true` at every deployment-writing site (primary loop, order-2 fallback, ragas-eval primary, ragas-eval fallback). Merge with existing `mode: responses` model_info for `copilot-codex` — a YAML map cannot have two `model_info` keys |
 | `litellm_config.yaml` (live, gitignored, bind-mounted) | Apply the same settings directly so the fix is live now without re-running `quick-setup.sh` |
 | `tests/test_healthcheck_config.py` (new) | Unit test (no Docker): load `litellm_config.example.yaml` and `litellm_config.test.yaml`, assert `general_settings.background_health_checks` is true and every deployment carries `model_info.disable_background_health_check: true` |
@@ -94,8 +94,8 @@ Deployment-writing sites in `write_litellm_config()`:
   a down provider may fail before cooldown kicks in. This is LiteLLM's default
   behavior without health checks and is consistent with how GateMid already routes.
 - **Per-deployment verbosity.** Each deployment gains a 3-line `model_info` block
-  (~12 deployments). Enforced by the new config test so future edits can't silently
-  reintroduce probes.
+  (10 in the example config, 8 in the test config). Enforced by the new config
+  test so future edits can't silently reintroduce probes.
 
 ## Out of scope
 
