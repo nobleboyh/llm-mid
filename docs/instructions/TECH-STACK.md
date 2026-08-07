@@ -68,6 +68,8 @@
 instead of live-probing every deployment on each call. Combined with
 `model_info.disable_background_health_check: true` on every deployment, the
 background loop probes nothing — no idle provider completions (init-007).
+`GET /health` therefore returns 200 with empty `healthy_endpoints` /
+`unhealthy_endpoints` lists and no longer reports provider readiness.
 Routing relies on `allowed_fails`/`cooldown_time` and `router_settings.fallbacks`.
 
 ## Docker images

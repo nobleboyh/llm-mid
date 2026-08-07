@@ -105,16 +105,25 @@ Stop `/health` from triggering live, billed LLM probes. Prefer cached health sta
 
 ## 6. Proposed Solution
 
-Add to `litellm_config.yaml` under `general_settings`:
+Two settings in `litellm_config.yaml`, both required for **zero** idle probes:
 
 ```yaml
 general_settings:
   master_key: "os.environ/GATEWAY_MASTER_KEY"
   background_health_checks: true
+
+model_list:
+  - model_name: gemini-flash
+    litellm_params:
+      model: gemini/gemini-2.5-flash
+      api_key: "os.environ/GEMINI_API_KEY"
+    model_info:
+      disable_background_health_check: true
+  # ... every deployment carries the same model_info flag
 ```
 
 - `background_health_checks: true` → `use_background_health_checks = True`. LiteLLM starts `_run_background_health_check()` (refresh cycle per `health_check_interval`), and `/health` serves the cached `health_check_results` instead of calling `perform_health_check` synchronously.
-- Still periodically verifies deployment connectivity (background loop does the probe) so routing/cooldowns keep working — but the 30s Docker healthcheck no longer bills.
+- `model_info.disable_background_health_check: true` on **every** deployment removes those deployments from the background loop's probe set (`model_count_enabled` → 0). The loop still runs and repopulates the cache with empty healthy/unhealthy lists, so `/health` stays 200 — but no provider is ever called by health checks.
+- Together, the two settings yield **zero** idle probes: neither `/health` nor the background loop issues a billed provider completion.
+- Routing no longer gets proactive health state; it relies on LiteLLM's failure-cooldown mechanism (`allowed_fails`, `cooldown_time`) plus the existing cross-model `router_settings.fallbacks`, which is how GateMid already routes in practice.
 - Restart: `docker compose restart litellm` (config is bind-mounted; no image rebuild).
-
-**Note / open question:** the background loop still performs the same live completions on its own interval, so idle charges are not reduced to zero — they drop to one probe per `health_check_interval` per deployment instead of one per 30s healthcheck. If the goal is **zero** idle charge, prefer additionally setting `model_info.disable_background_health_check: true` (background loop) or pinning probe cadence in `litellm_settings.health_check_interval`. Tune per operator intent.

@@ -16,12 +16,12 @@ completions/day of pure overhead, invisible in GateMid's own observability
 (probe prompts are ~7 tokens, below `min_tokens_to_compress`; the eval callback
 skips them as having no real user question).
 
-Verified against installed `litellm 1.82.3` source:
+Verified against installed `litellm 1.92.0` source:
 - `/health` live-probe path: `litellm/proxy/health_endpoints/_health_endpoints.py` —
   `if use_background_health_checks: return health_check_results` else
   `_perform_health_check_and_save(...)`.
-- Background loop: `litellm/proxy/proxy_server.py:2120-2290` — filters
-  `model_info.disable_background_health_check` at line 2177.
+- Background loop: `litellm/proxy/proxy_server.py:3206-3405` — filters
+  `model_info.disable_background_health_check` at line 3264.
 
 ## Goal
 
@@ -72,6 +72,8 @@ Deployment-writing sites in `write_litellm_config()`:
   `order: 2`.
 - **Ragas-eval primary** (~line 786): emit a standalone `model_info` block.
 - **Ragas-eval fallback** (~line 812): emit a standalone `model_info` block.
+- **Team Smart Router** (~line 848): standalone `model_info` block in the
+  `team-smart-router` heredoc (complexity router deployment).
 
 ## Verification
 
