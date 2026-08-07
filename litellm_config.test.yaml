@@ -4,6 +4,8 @@ model_list:
       model: deepseek/deepseek-v4-flash
       api_key: "os.environ/DEEPSEEK_API_KEY"
       api_base: http://host.docker.internal:18000/v1
+    model_info:
+      disable_background_health_check: true
 
   - model_name: gemini-flash
     litellm_params:
@@ -11,12 +13,16 @@ model_list:
       api_key: "os.environ/DEEPSEEK_API_KEY"
       api_base: http://host.docker.internal:18000/v1
       order: 2
+    model_info:
+      disable_background_health_check: true
 
   - model_name: gemini-pro
     litellm_params:
       model: deepseek/deepseek-v4-flash
       api_key: "os.environ/DEEPSEEK_API_KEY"
       api_base: http://host.docker.internal:18000/v1
+    model_info:
+      disable_background_health_check: true
 
   - model_name: gemini-pro
     litellm_params:
@@ -24,18 +30,24 @@ model_list:
       api_key: "os.environ/DEEPSEEK_API_KEY"
       api_base: http://host.docker.internal:18000/v1
       order: 2
+    model_info:
+      disable_background_health_check: true
 
   - model_name: deepseek-flash
     litellm_params:
       model: deepseek/deepseek-v4-flash
       api_key: "os.environ/DEEPSEEK_API_KEY"
       api_base: http://host.docker.internal:18000/v1
+    model_info:
+      disable_background_health_check: true
 
   - model_name: deepseek-pro
     litellm_params:
       model: deepseek/deepseek-v4-pro
       api_key: "os.environ/DEEPSEEK_API_KEY"
       api_base: http://host.docker.internal:18000/v1
+    model_info:
+      disable_background_health_check: true
 
   - model_name: deepseek-pro
     litellm_params:
@@ -43,6 +55,8 @@ model_list:
       api_key: "os.environ/DEEPSEEK_API_KEY"
       api_base: http://host.docker.internal:18000/v1
       order: 2
+    model_info:
+      disable_background_health_check: true
 
   - model_name: team-smart-router
     litellm_params:
@@ -69,6 +83,8 @@ model_list:
           medium_complex: 0.3
           complex_reasoning: 0.55
       complexity_router_default_model: gemini-flash
+    model_info:
+      disable_background_health_check: true
 
 litellm_settings:
   drop_params: true
@@ -87,3 +103,4 @@ router_settings:
 
 general_settings:
   master_key: "os.environ/GATEWAY_MASTER_KEY"
+  background_health_checks: true
