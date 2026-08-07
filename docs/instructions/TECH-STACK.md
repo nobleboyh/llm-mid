@@ -15,6 +15,7 @@
 | Package | Version | Purpose |
 |---------|---------|---------|
 | `litellm[proxy]` | ≥1.40.0 | LLM proxy server, provider abstraction, complexity router |
+| `fastapi` | ≥0.136.3,<0.140.7 | Must stay below 0.140.7 — litellm imports `fastapi.dependencies.utils.get_flat_dependant`, removed upstream in 0.140.7 |
 | `headroom-ai[proxy]` | ≥0.8.0 | Context compression (ASGI middleware) |
 | `redis` | ≥5.0.0 | Redis client for eval queue and storage |
 | `uvicorn` | ≥0.29.0 | ASGI server (used internally by LiteLLM) |

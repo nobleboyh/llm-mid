@@ -1,4 +1,8 @@
 litellm[proxy]>=1.40.0
+# litellm's proxy imports fastapi.dependencies.utils.get_flat_dependant,
+# which FastAPI removed in v0.140.7. Pin below that while staying in
+# litellm's supported range (>=0.136.3).
+fastapi>=0.136.3,<0.140.7
 headroom-ai[proxy]>=0.30.0
 redis>=5.0.0
 uvicorn>=0.29.0
