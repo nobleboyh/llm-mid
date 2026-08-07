@@ -715,10 +715,18 @@ MODEL
             echo "      api_key: \"$(local_api_key_for "$m")\"" >> litellm_config.yaml
         fi
 
+        # All deployments are excluded from health checks (init-007):
+        # /health must never trigger a live, billed provider completion.
         if [[ "$mode_responses" == true ]]; then
             cat >> litellm_config.yaml <<MODEL
     model_info:
       mode: responses
+      disable_background_health_check: true
+MODEL
+        else
+            cat >> litellm_config.yaml <<MODEL
+    model_info:
+      disable_background_health_check: true
 MODEL
         fi
 
@@ -752,6 +760,10 @@ MODEL
             fi
 
             echo "      order: 2" >> litellm_config.yaml
+            cat >> litellm_config.yaml <<MODEL
+    model_info:
+      disable_background_health_check: true
+MODEL
             echo "" >> litellm_config.yaml
         fi
     done
@@ -791,6 +803,10 @@ YAML
         if [[ -n "$judge_env" ]]; then
             echo "      api_key: \"os.environ/${judge_env}\"" >> litellm_config.yaml
         fi
+        cat >> litellm_config.yaml <<MODEL
+    model_info:
+      disable_background_health_check: true
+MODEL
         echo "" >> litellm_config.yaml
 
         # ── Ragas eval fallback deployment ──────────────────────────
@@ -814,6 +830,8 @@ YAML
       model: ${ragas_fb_backend}
       api_key: "os.environ/${ragas_fb_env}"
       order: 2
+    model_info:
+      disable_background_health_check: true
 
 YAML
         fi
@@ -852,6 +870,8 @@ YAML
           medium_complex: 0.3
           complex_reasoning: 0.55
       complexity_router_default_model: ${TIER_SIMPLE}
+    model_info:
+      disable_background_health_check: true
 
 YAML
 
@@ -893,6 +913,10 @@ YAML
     cat >> litellm_config.yaml <<YAML
 general_settings:
   master_key: "os.environ/GATEWAY_MASTER_KEY"
+  # Serve /health from cached results instead of live-probing every
+  # deployment (init-007). Background loop still runs but probes nothing
+  # (see model_info.disable_background_health_check on each deployment).
+  background_health_checks: true
 YAML
     ok "litellm_config.yaml written"
 }
