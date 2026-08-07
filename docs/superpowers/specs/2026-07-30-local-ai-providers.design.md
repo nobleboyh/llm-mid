@@ -131,33 +131,47 @@ New file `proxy/callbacks/local_provider_failure.py` — a LiteLLM failure callb
 
 Detection logic:
 1. Error contains status code 404
-2. Model name starts with `ollama/`, `lm_studio/`, or api_base matches known local endpoints (localhost:11434, :8080, :1234, :8000)
-3. Log: `ERROR [LocalModel] model 'xyz' not found on $PROVIDER. Run \`ollama list\` to see available models, or update OLLAMA_MODEL in .env`
+2. Model name starts with `ollama/`, `lm_studio/`, or api_base matches known local endpoints (localhost:11434, :8080, :1234, :8000) — port matched with an anchored regex so `:8080` doesn't match inside `:18080`
+3. Log: `ERROR [LocalModel] model 'xyz' not found on $PROVIDER. Run \`ollama list\` to see available models, or fix OLLAMA_MODEL`
 
-Registered in `litellm_settings`:
+**Registration (LiteLLM async proxy):** the failure callback is appended to the
+existing `callbacks` list (same key the Ragas callback uses), not a separate
+`failure_callbacks` key — LiteLLM's config loader reads `failure_callback`
+(singular) and routes its instances to the sync failure list that the async
+proxy never consults. The string is a **full dotted path** ending in the
+instance name, because `get_instance_fn` splits on the last dot and would
+otherwise look up a nonexistent attribute on the `proxy.callbacks` package.
+The class must implement `async_log_failure_event` (not just `log_failure_event`)
+since that is the hook the async failure handler dispatches.
 ```yaml
 litellm_settings:
-  failure_callbacks: ['proxy.callbacks.local_provider_failure']
+  callbacks:
+    - 'proxy.callback.ragas_callback'
+    - 'proxy.callbacks.local_provider_failure.local_provider_failure_logger'
 ```
+
+**Diagnostic points at the real fix:** the `*_MODEL` value is baked into
+`litellm_config.yaml` at setup time (not read from `.env` at runtime), so the
+log message directs the user to re-run `./quick-setup.sh` or edit the YAML.
 
 ### F. Error logging example output
 
 ```
 ERROR [LocalModel] 404 — Ollama model 'mistral-v2' not found.
 → Run `ollama list` to see models available on that server.
-→ Or update OLLAMA_MODEL in .env and restart GateMid.
+→ Fix OLLAMA_MODEL — re-run ./quick-setup.sh or edit litellm_config.yaml, then restart.
 
 ERROR [LocalModel] 404 — llama.cpp model 'codellama-34b' not found.
 → Check which model your llama.cpp server is serving (see terminal output).
-→ Or update LLAMACPP_MODEL in .env and restart GateMid.
+→ Fix LLAMACPP_MODEL — re-run ./quick-setup.sh or edit litellm_config.yaml, then restart.
 
 ERROR [LocalModel] 404 — LM Studio model 'deepseek-r1' not found.
 → Check which model is loaded in LM Studio's UI.
-→ Or update LMSTUDIO_MODEL in .env and restart GateMid.
+→ Fix LMSTUDIO_MODEL — re-run ./quick-setup.sh or edit litellm_config.yaml, then restart.
 
 ERROR [LocalModel] 404 — oMLX model 'qwen2.5-32b' not found.
 → Check available models in ~/.omlx/models/.
-→ Or update OMLX_MODEL in .env and restart GateMid.
+→ Fix OMLX_MODEL — re-run ./quick-setup.sh or edit litellm_config.yaml, then restart.
 ```
 
 ### G. Docker networking note

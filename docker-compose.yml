@@ -11,6 +11,10 @@ services:
     restart: unless-stopped
     ports:
       - "4000:4000"
+    # Let local inference servers on the host be reached as host.docker.internal
+    # (Docker Desktop resolves this automatically; Linux/other runtimes need it).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       # Provider keys
       GEMINI_API_KEY:       ${GEMINI_API_KEY}

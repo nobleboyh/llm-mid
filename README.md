@@ -776,7 +776,7 @@ curl http://localhost:8080/v1/models                    # llama.cpp
 curl http://localhost:1234/v1/models                    # LM Studio
 curl http://localhost:8000/v1/models                    # oMLX
 
-# 2. Check the model name in .env matches what your server serves
+# 2. Check the model name in litellm_config.yaml matches what your server serves
 #    Ollama:  run `ollama list` to see all available models
 #    llama.cpp:  the model name is printed on server startup
 #    oMLX:   check ~/.omlx/models/ for available model directories
@@ -788,8 +788,10 @@ curl http://localhost:8000/v1/models                    # oMLX
 docker compose logs litellm | grep -i "LocalModel"
 ```
 
-**Note:** If you see `ERROR [LocalModel]` in the logs, the model name in `.env` doesn't
-match what your local server serves. Update `*_MODEL` and restart GateMid.
+**Note:** If you see `ERROR [LocalModel]` in the logs, the model name doesn't
+match what your local server serves. The `*_MODEL` value is baked into
+`litellm_config.yaml` at setup time — re-run `./quick-setup.sh` or edit the
+`model:` entry there, then restart GateMid.
 
 ## Uninstallation
 

@@ -196,18 +196,38 @@ model_env() {
     esac
 }
 
+# local_api_base_for <model> — echoes the api_base for a local provider alias,
+# or empty string if the model isn't a local provider. Shared by the primary
+# deployment and the order=2 fallback deployment so both get a working endpoint.
+local_api_base_for() {
+    case "$1" in
+        ollama)   echo "${OLLAMA_API_BASE:-http://localhost:11434}" ;;
+        llamacpp) echo "${LLAMACPP_API_BASE:-http://localhost:8080}/v1" ;;
+        lmstudio) echo "${LMSTUDIO_API_BASE:-http://localhost:1234}" ;;
+        omlx)     echo "${OMLX_API_BASE:-http://localhost:8000}/v1" ;;
+        *)        echo "" ;;
+    esac
+}
+
+# local_api_key_for <model> — echoes the dummy api_key used by local providers.
+local_api_key_for() {
+    case "$1" in
+        ollama) echo "ollama" ;;
+        *)      echo "sk-no-key" ;;
+    esac
+}
+
 # ── Local Provider Configuration ─────────────────────────────────────────
 # Called after assign_fallbacks to collect endpoint URLs and model names.
 # These are stored as env vars in .env and used in write_litellm_config.
 configure_local_endpoints() {
-    local provider_enabled=() provider_idx=0
+    local provider_idx=0
     for p in ollama llamacpp lmstudio omlx; do
         if [[ " ${ENABLED_PROVIDERS[*]} " =~ " ${p} " ]]; then
-            provider_enabled[provider_idx]="$p"
             provider_idx=$((provider_idx + 1))
         fi
     done
-    if [[ provider_idx -eq 0 ]]; then
+    if [[ "$provider_idx" -eq 0 ]]; then
         return
     fi
 
@@ -220,29 +240,29 @@ configure_local_endpoints() {
 
     if [[ " ${ENABLED_PROVIDERS[*]} " =~ " ollama " ]]; then
         echo "  ── Ollama ──"
-        OLLAMA_API_BASE=$(prompt_with_default "  Endpoint URL" "http://localhost:11434")
-        OLLAMA_MODEL=$(prompt_with_default "  Model name (e.g. llama3.1)" "llama3")
+        OLLAMA_API_BASE=$(pick_with_default "  Endpoint URL" "http://localhost:11434")
+        OLLAMA_MODEL=$(pick_with_default "  Model name (e.g. llama3.1)" "llama3")
         echo ""
     fi
 
     if [[ " ${ENABLED_PROVIDERS[*]} " =~ " llamacpp " ]]; then
         echo "  ── llama.cpp ──"
-        LLAMACPP_API_BASE=$(prompt_with_default "  Endpoint URL" "http://localhost:8080")
-        LLAMACPP_MODEL=$(prompt_with_default "  Model name (e.g. llama-3.2-3b)" "llama-3.2-3b")
+        LLAMACPP_API_BASE=$(pick_with_default "  Endpoint URL" "http://localhost:8080")
+        LLAMACPP_MODEL=$(pick_with_default "  Model name (e.g. llama-3.2-3b)" "llama-3.2-3b")
         echo ""
     fi
 
     if [[ " ${ENABLED_PROVIDERS[*]} " =~ " lmstudio " ]]; then
         echo "  ── LM Studio ──"
-        LMSTUDIO_API_BASE=$(prompt_with_default "  Endpoint URL" "http://localhost:1234")
-        LMSTUDIO_MODEL=$(prompt_with_default "  Model name (e.g. deepseek-coder-v2)" "model")
+        LMSTUDIO_API_BASE=$(pick_with_default "  Endpoint URL" "http://localhost:1234")
+        LMSTUDIO_MODEL=$(pick_with_default "  Model name (e.g. deepseek-coder-v2)" "model")
         echo ""
     fi
 
     if [[ " ${ENABLED_PROVIDERS[*]} " =~ " omlx " ]]; then
         echo "  ── oMLX (Apple Silicon) ──"
-        OMLX_API_BASE=$(prompt_with_default "  Endpoint URL" "http://localhost:8000")
-        OMLX_MODEL=$(prompt_with_default "  Model name (e.g. llama)" "llama")
+        OMLX_API_BASE=$(pick_with_default "  Endpoint URL" "http://localhost:8000")
+        OMLX_MODEL=$(pick_with_default "  Model name (e.g. llama)" "llama")
         echo ""
     fi
 
@@ -669,12 +689,9 @@ YAML
 
         # Check if this is a local provider
         local is_local=false
-        for lp in ollama llamacpp lmstudio omlx; do
-            if [[ "$m" == "$lp" ]]; then
-                is_local=true
-                break
-            fi
-        done
+        if [[ -n "$(local_api_base_for "$m")" ]]; then
+            is_local=true
+        fi
 
         # Check if this is a codex / responses mode model
         local mode_responses=false
@@ -694,25 +711,8 @@ MODEL
 
         # ── Local provider: add api_base + dummy api_key ──
         if [[ "$is_local" == true ]]; then
-            local local_api_base=""
-            local local_api_key="sk-no-key"
-            case "$m" in
-                ollama)
-                    local_api_base="${OLLAMA_API_BASE:-http://localhost:11434}"
-                    local_api_key="ollama"
-                    ;;
-                llamacpp)
-                    local_api_base="${LLAMACPP_API_BASE:-http://localhost:8080}/v1"
-                    ;;
-                lmstudio)
-                    local_api_base="${LMSTUDIO_API_BASE:-http://localhost:1234}"
-                    ;;
-                omlx)
-                    local_api_base="${OMLX_API_BASE:-http://localhost:8000}/v1"
-                    ;;
-            esac
-            echo "      api_base: ${local_api_base}" >> litellm_config.yaml
-            echo "      api_key: \"${local_api_key}\"" >> litellm_config.yaml
+            echo "      api_base: $(local_api_base_for "$m")" >> litellm_config.yaml
+            echo "      api_key: \"$(local_api_key_for "$m")\"" >> litellm_config.yaml
         fi
 
         if [[ "$mode_responses" == true ]]; then
@@ -742,6 +742,15 @@ MODEL
             if [[ -n "$fb_env" ]]; then
                 echo "      api_key: \"os.environ/${fb_env}\"" >> litellm_config.yaml
             fi
+
+            # ── Local fallback: same api_base/dummy-key treatment as primary ──
+            local fb_api_base
+            fb_api_base=$(local_api_base_for "$fallback_m")
+            if [[ -n "$fb_api_base" ]]; then
+                echo "      api_base: ${fb_api_base}" >> litellm_config.yaml
+                echo "      api_key: \"$(local_api_key_for "$fallback_m")\"" >> litellm_config.yaml
+            fi
+
             echo "      order: 2" >> litellm_config.yaml
             echo "" >> litellm_config.yaml
         fi
@@ -850,8 +859,7 @@ YAML
     cat >> litellm_config.yaml <<YAML
 litellm_settings:
   drop_params: true
-  callbacks: ['proxy.callback.ragas_callback']
-  failure_callbacks: ['proxy.callbacks.local_provider_failure']
+  callbacks: ['proxy.callback.ragas_callback', 'proxy.callbacks.local_provider_failure.local_provider_failure_logger']
   num_retries: 1                    # try each deployment once before falling back
   request_timeout: 60               # fail per-attempt if no response in 30s
   allowed_fails: 3                  # cooldown model after 3 failures in a minute

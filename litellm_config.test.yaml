@@ -72,8 +72,7 @@ model_list:
 
 litellm_settings:
   drop_params: true
-  callbacks: ['proxy.callback.ragas_callback']
-  failure_callbacks: ['proxy.callbacks.local_provider_failure']
+  callbacks: ['proxy.callback.ragas_callback', 'proxy.callbacks.local_provider_failure.local_provider_failure_logger']
   num_retries: 1
   request_timeout: 60
   allowed_fails: 3

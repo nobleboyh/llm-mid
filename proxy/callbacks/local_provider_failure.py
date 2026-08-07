@@ -9,6 +9,7 @@ Behavior is purely diagnostic — never blocks or modifies the request/response.
 from __future__ import annotations
 
 import logging
+import re
 
 from litellm.integrations.custom_logger import CustomLogger
 
@@ -65,20 +66,25 @@ class LocalProviderFailureLogger(CustomLogger):
         if not api_base:
             return None
         ab = api_base.lower()
-        # Port-based heuristic matching
-        port_map = {
-            "11434": 0,  # Ollama
-            "8080":  1,  # llama.cpp
-            "1234":  2,  # LM Studio
-            "8000":  3,  # oMLX
-        }
-        for port, idx in port_map.items():
-            if f":{port}" in ab:
+        # Port-based heuristic matching — anchored so `:8080` doesn't match
+        # inside `:18080` or `:114341`.
+        port_map = [
+            (r"11434", 0),  # Ollama
+            (r"8080",  1),  # llama.cpp
+            (r"1234",  2),  # LM Studio
+            (r"8000",  3),  # oMLX
+        ]
+        for port, idx in port_map:
+            if re.search(rf":{port}(?:[/:]|$)", ab):
                 return _LOCAL_PROVIDERS[idx]
         return None
 
-    def log_failure_event(self, kwargs, response_obj, start_time, end_time):
-        """LiteLLM failure callback — runs on every failed LLM call."""
+    def _log_failure(self, kwargs) -> None:
+        """Log a diagnostic when a local provider returns a 404.
+
+        Shared by the sync and async failure hooks so behavior is identical
+        regardless of which dispatch LiteLLM uses.
+        """
         model = kwargs.get("model", "")
         exception = kwargs.get("exception", "")
 
@@ -105,12 +111,20 @@ class LocalProviderFailureLogger(CustomLogger):
         logger.error(
             "ERROR [LocalModel] 404 — %s model '%s' not found.\n"
             "→ %s\n"
-            "→ Or update %s in .env and restart GateMid.",
+            "→ Fix %s — re-run ./quick-setup.sh or edit litellm_config.yaml, then restart.",
             provider["label"],
             model_short,
             provider["hint"],
             provider["config_var"],
         )
+
+    def log_failure_event(self, kwargs, response_obj, start_time, end_time):
+        """Sync failure hook — used when LiteLLM dispatches failures synchronously."""
+        self._log_failure(kwargs)
+
+    async def async_log_failure_event(self, kwargs, response_obj, start_time, end_time):
+        """Async failure hook — the path the LiteLLM proxy actually dispatches."""
+        self._log_failure(kwargs)
 
 
 local_provider_failure_logger = LocalProviderFailureLogger()
