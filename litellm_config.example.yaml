@@ -7,39 +7,53 @@ model_list:
     litellm_params:
       model: gemini/gemini-2.5-flash
       api_key: "os.environ/GEMINI_API_KEY"
+    model_info:
+      disable_background_health_check: true
 
   - model_name: gemini-flash
     litellm_params:
       model: deepseek/deepseek-v4-flash
       api_key: "os.environ/DEEPSEEK_API_KEY"
       order: 2
+    model_info:
+      disable_background_health_check: true
 
   - model_name: gemini-pro
     litellm_params:
       model: gemini/gemini-2.5-pro
       api_key: "os.environ/GEMINI_API_KEY"
+    model_info:
+      disable_background_health_check: true
 
   - model_name: gemini-pro
     litellm_params:
       model: deepseek/deepseek-v4-flash
       api_key: "os.environ/DEEPSEEK_API_KEY"
       order: 2
+    model_info:
+      disable_background_health_check: true
 
   - model_name: deepseek-flash
     litellm_params:
       model: deepseek/deepseek-v4-flash
       api_key: "os.environ/DEEPSEEK_API_KEY"
+    model_info:
+      disable_background_health_check: true
 
   - model_name: deepseek-pro
     litellm_params:
       model: deepseek/deepseek-v4-pro
       api_key: "os.environ/DEEPSEEK_API_KEY"
+    model_info:
+      disable_background_health_check: true
 
   - model_name: deepseek-pro
     litellm_params:
       model: gemini/gemini-2.5-pro
       api_key: "os.environ/GEMINI_API_KEY"
       order: 2
+    model_info:
+      disable_background_health_check: true
 
   # Ragas Eval Model (LLM-as-judge — routes through LiteLLM)
   # The eval worker calls this with model="ragas-eval". The RagasLogger
@@ -49,6 +63,8 @@ model_list:
       model: deepseek/deepseek-v4-flash
       api_key: "os.environ/DEEPSEEK_API_KEY"
       order: 1
+    model_info:
+      disable_background_health_check: true
 
   # Fallback: Gemini Flash (if DeepSeek is slow or down)
   - model_name: ragas-eval
@@ -56,6 +72,8 @@ model_list:
       model: gemini/gemini-2.5-flash
       api_key: "os.environ/GEMINI_API_KEY"
       order: 2
+    model_info:
+      disable_background_health_check: true
 
   # Team Smart Router — auto-classifies and routes
   - model_name: team-smart-router
@@ -83,6 +101,8 @@ model_list:
           medium_complex: 0.3
           complex_reasoning: 0.55
       complexity_router_default_model: gemini-flash
+    model_info:
+      disable_background_health_check: true
 
 litellm_settings:
   drop_params: true
@@ -103,3 +123,7 @@ router_settings:
 
 general_settings:
   master_key: "os.environ/GATEWAY_MASTER_KEY"
+  # Serve /health from cached results instead of live-probing every
+  # deployment (init-007). The background loop still runs but probes nothing
+  # (see model_info.disable_background_health_check below).
+  background_health_checks: true
