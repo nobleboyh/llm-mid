@@ -76,8 +76,9 @@ LLAMACPP_API_BASE=http://localhost:8080
 LLAMACPP_MODEL=llama-3.2-3b
 LMSTUDIO_API_BASE=http://localhost:1234
 LMSTUDIO_MODEL=model
-OMLX_API_BASE=http://localhost:8000
-OMLX_MODEL=llama
+OMLX_API_KEY=your-omlx-api-key
+OMLX_API_BASE=http://host.docker.internal:8000
+OMLX_MODEL=Qwen3.5-9B-MLX-4bit
 ```
 
 ### C. model_backend() mapping
@@ -117,12 +118,12 @@ For each local model, the YAML includes api_base + dummy api_key. Models using t
       api_base: http://localhost:1234
       api_key: "sk-no-key"
 
-  # oMLX (OpenAI-compatible API)
+  # oMLX (OpenAI-compatible API, API-key auth required)
   - model_name: omlx
     litellm_params:
-      model: openai/llama
-      api_base: http://localhost:8000/v1
-      api_key: "sk-no-key"
+      model: openai/Qwen3.5-9B-MLX-4bit
+      api_base: http://host.docker.internal:8000/v1
+      api_key: "${OMLX_API_KEY}"
 ```
 
 ### E. Local-provider failure callback

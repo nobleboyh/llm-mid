@@ -780,9 +780,12 @@ curl http://localhost:8000/v1/models                    # oMLX
 #    Ollama:  run `ollama list` to see all available models
 #    llama.cpp:  the model name is printed on server startup
 #    oMLX:   check ~/.omlx/models/ for available model directories
+#           (and confirm the OMLX_API_KEY is set — oMLX requires API-key auth)
 
-# 3. If GateMid runs in Docker, use host.docker.internal instead of localhost:
-#    OLLAMA_API_BASE=http://host.docker.internal:11434
+# 3. Endpoints default to host.docker.internal so the Docker proxy can
+#    reach local servers on the host. If your local server runs inside Docker,
+#    switch the *_API_BASE back to localhost, e.g.:
+#    OLLAMA_API_BASE=http://localhost:11434
 
 # 4. Check GateMid logs for local provider errors
 docker compose logs litellm | grep -i "LocalModel"

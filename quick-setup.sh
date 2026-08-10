@@ -56,6 +56,28 @@ pick_with_default() {
     echo "${val:-$default}"
 }
 
+# pick_required <prompt> — forces a non-empty, un-defaulted input.
+pick_required() {
+    local prompt="$1" val
+    while true; do
+        read -rp "  ${prompt}: " val
+        if [[ -n "$val" ]]; then
+            echo "$val"
+            return
+        fi
+        echo ""
+        echo -e "  ${RED}✖${RESET} This cannot be empty — your local server must match it exactly."
+    done
+}
+
+# pick_key <prompt> <current> — reads a value, defaulting to current when non-empty
+# (mirrors collect_api_keys behaviour so re-runs keep existing secrets).
+pick_key() {
+    local prompt="$1" current="${2:-}" inp
+    read -rp "  ${prompt} (current: $(mask_key "$current")): " inp
+    echo "${inp:-$current}"
+}
+
 # _print_model_menu — numbered list of ENABLED_MODELS
 _print_model_menu() {
     local i=0 m
@@ -177,7 +199,7 @@ model_backend() {
         ollama)          echo "ollama/${OLLAMA_MODEL:-llama3}" ;;
         llamacpp)        echo "openai/${LLAMACPP_MODEL:-llama-3.2-3b}" ;;
         lmstudio)        echo "lm_studio/${LMSTUDIO_MODEL:-model}" ;;
-        omlx)            echo "openai/${OMLX_MODEL:-llama}" ;;
+        omlx)            echo "openai/${OMLX_MODEL:-}" ;;
         *)               echo "unknown/$1" ;;
     esac
 }
@@ -204,7 +226,7 @@ local_api_base_for() {
         ollama)   echo "${OLLAMA_API_BASE:-http://localhost:11434}" ;;
         llamacpp) echo "${LLAMACPP_API_BASE:-http://localhost:8080}/v1" ;;
         lmstudio) echo "${LMSTUDIO_API_BASE:-http://localhost:1234}" ;;
-        omlx)     echo "${OMLX_API_BASE:-http://localhost:8000}/v1" ;;
+        omlx)     echo "${OMLX_API_BASE:-http://host.docker.internal:8000}/v1" ;;
         *)        echo "" ;;
     esac
 }
@@ -213,6 +235,7 @@ local_api_base_for() {
 local_api_key_for() {
     case "$1" in
         ollama) echo "ollama" ;;
+        omlx)   echo "${OMLX_API_KEY:-sk-no-key}" ;;
         *)      echo "sk-no-key" ;;
     esac
 }
@@ -261,8 +284,14 @@ configure_local_endpoints() {
 
     if [[ " ${ENABLED_PROVIDERS[*]} " =~ " omlx " ]]; then
         echo "  ── oMLX (Apple Silicon) ──"
-        OMLX_API_BASE=$(pick_with_default "  Endpoint URL" "http://localhost:8000")
-        OMLX_MODEL=$(pick_with_default "  Model name (e.g. llama)" "llama")
+        # oMLX now requires API-key auth; default host reaches the host Mac.
+        OMLX_API_BASE=$(pick_with_default "  Endpoint URL" "http://host.docker.internal:8000")
+        OMLX_API_KEY=$(pick_key "  API key (required — check your oMLX setup)" "${OMLX_API_KEY:-}")
+        if [[ -z "$OMLX_API_KEY" ]]; then
+            warn "No oMLX API key set — oMLX calls will fail auth. Set OMLX_API_KEY in .env later."
+        fi
+        # No default model — whatever the user types is what oMLX must serve exactly.
+        OMLX_MODEL=$(pick_required "  Model name (exact — e.g. Qwen3.5-9B-MLX-4bit)")
         echo ""
     fi
 
@@ -642,8 +671,9 @@ ENV
         echo "LMSTUDIO_MODEL=${LMSTUDIO_MODEL:-model}" >> .env
     fi
     if [[ " ${ENABLED_PROVIDERS[*]} " =~ " omlx " ]]; then
-        echo "OMLX_API_BASE=${OMLX_API_BASE:-http://localhost:8000}" >> .env
-        echo "OMLX_MODEL=${OMLX_MODEL:-llama}" >> .env
+        echo "OMLX_API_KEY=${OMLX_API_KEY:-sk-no-key}" >> .env
+        echo "OMLX_API_BASE=${OMLX_API_BASE:-http://host.docker.internal:8000}" >> .env
+        echo "OMLX_MODEL=${OMLX_MODEL:-}" >> .env
     fi
 
     if _gemini_is_configured; then
