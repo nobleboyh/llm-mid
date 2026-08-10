@@ -22,6 +22,10 @@ _ragas_mock = MagicMock()
 _ragas_mock.evaluate = _ragas_evaluate_mock
 sys.modules["ragas"] = _ragas_mock
 sys.modules["ragas.metrics"] = MagicMock()
+# datasets (HuggingFace) is another heavy transitive dep of ragas.  score_record()
+# builds a Dataset.from_dict() whose result is only ever handed to evaluate(),
+# which is mocked here — so a plain module mock keeps unit tests dependency-free.
+sys.modules["datasets"] = MagicMock()
 
 # ResponseRelevancy must be a real class, not a MagicMock instance —
 # score_record() does isinstance(answer_relevancy, ResponseRelevancy),
