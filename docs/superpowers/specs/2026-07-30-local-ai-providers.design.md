@@ -70,26 +70,29 @@ Model name defaults:
 
 Values stored in `.env`:
 ```
-OLLAMA_API_BASE=http://localhost:11434
-OLLAMA_MODEL=llama3
-LLAMACPP_API_BASE=http://localhost:8080
-LLAMACPP_MODEL=llama-3.2-3b
-LMSTUDIO_API_BASE=http://localhost:1234
-LMSTUDIO_MODEL=model
+OLLAMA_API_BASE=http://host.docker.internal:11434
+OLLAMA_MODEL=
+LLAMACPP_API_BASE=http://host.docker.internal:8080
+LLAMACPP_MODEL=
+LMSTUDIO_API_BASE=http://host.docker.internal:1234
+LMSTUDIO_MODEL=
 OMLX_API_KEY=your-omlx-api-key
 OMLX_API_BASE=http://host.docker.internal:8000
-OMLX_MODEL=Qwen3.5-9B-MLX-4bit
+OMLX_MODEL=
 ```
+Local model names are **required at setup time** (no defaults) — the local
+server must serve exactly what the user types. Endpoints default to
+`host.docker.internal` so the Docker proxy can reach host-run servers.
 
 ### C. model_backend() mapping
 
 Free-text model name substituted at config generation time:
 
 ```bash
-ollama)      echo "ollama/${OLLAMA_MODEL:-llama3}" ;;
-llamacpp)    echo "openai/${LLAMACPP_MODEL:-llama-3.2}" ;;  # uses custom api_base + /v1
-lmstudio)    echo "lm_studio/${LMSTUDIO_MODEL:-model}" ;;
-omlx)        echo "openai/${OMLX_MODEL:-llama}" ;;          # uses custom api_base + /v1
+ollama)      echo "ollama/${OLLAMA_MODEL:-}" ;;
+llamacpp)    echo "openai/${LLAMACPP_MODEL:-}" ;;  # uses custom api_base + /v1
+lmstudio)    echo "lm_studio/${LMSTUDIO_MODEL:-}" ;;
+omlx)        echo "openai/${OMLX_MODEL:-}" ;;      # uses custom api_base + /v1
 ```
 
 ### D. Litellm config generation
@@ -100,22 +103,22 @@ For each local model, the YAML includes api_base + dummy api_key. Models using t
   # Ollama (native LiteLLM provider)
   - model_name: ollama
     litellm_params:
-      model: ollama/llama3
-      api_base: http://localhost:11434
+      model: ollama/<required-model>
+      api_base: http://host.docker.internal:11434
       api_key: "ollama"
 
   # llama.cpp (OpenAI-compatible API)
   - model_name: llamacpp
     litellm_params:
-      model: openai/llama-3.2-3b
-      api_base: http://localhost:8080/v1
+      model: openai/<required-model>
+      api_base: http://host.docker.internal:8080/v1
       api_key: "sk-no-key"
 
   # LM Studio (native LiteLLM provider)
   - model_name: lmstudio
     litellm_params:
-      model: lm_studio/model
-      api_base: http://localhost:1234
+      model: lm_studio/<required-model>
+      api_base: http://host.docker.internal:1234
       api_key: "sk-no-key"
 
   # oMLX (OpenAI-compatible API, API-key auth required)
@@ -183,7 +186,11 @@ Local providers run on the **host machine**, not inside Docker containers. The G
 - **Linux**: use `--network=host` or `http://172.17.0.1:11434`
 - **Windows**: use `host.docker.internal`
 
-The `configure_local_endpoints()` step should **not** auto-rewrite — just log a warning if the URL starts with `localhost`, suggesting `host.docker.internal` instead.
+The `configure_local_endpoints()` step defaults every local provider's endpoint
+to `host.docker.internal` (so the Docker proxy reaches host-run servers on
+macOS/Windows; on Linux add the `host-gateway` extra_host, already present in
+`docker-compose.yml`). Users may override to `localhost` if their server runs
+as a sibling container on the same Docker network.
 
 ### H. README updates
 

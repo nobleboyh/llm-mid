@@ -196,9 +196,9 @@ model_backend() {
         copilot-gpt4)    echo "github_copilot/gpt-4" ;;
         copilot-codex)   echo "github_copilot/gpt-5.1-codex" ;;
         github-llama)    echo "github/Llama-3.2-11B-Vision-Instruct" ;;
-        ollama)          echo "ollama/${OLLAMA_MODEL:-llama3}" ;;
-        llamacpp)        echo "openai/${LLAMACPP_MODEL:-llama-3.2-3b}" ;;
-        lmstudio)        echo "lm_studio/${LMSTUDIO_MODEL:-model}" ;;
+        ollama)          echo "ollama/${OLLAMA_MODEL:-}" ;;
+        llamacpp)        echo "openai/${LLAMACPP_MODEL:-}" ;;
+        lmstudio)        echo "lm_studio/${LMSTUDIO_MODEL:-}" ;;
         omlx)            echo "openai/${OMLX_MODEL:-}" ;;
         *)               echo "unknown/$1" ;;
     esac
@@ -223,9 +223,9 @@ model_env() {
 # deployment and the order=2 fallback deployment so both get a working endpoint.
 local_api_base_for() {
     case "$1" in
-        ollama)   echo "${OLLAMA_API_BASE:-http://localhost:11434}" ;;
-        llamacpp) echo "${LLAMACPP_API_BASE:-http://localhost:8080}/v1" ;;
-        lmstudio) echo "${LMSTUDIO_API_BASE:-http://localhost:1234}" ;;
+        ollama)   echo "${OLLAMA_API_BASE:-http://host.docker.internal:11434}" ;;
+        llamacpp) echo "${LLAMACPP_API_BASE:-http://host.docker.internal:8080}/v1" ;;
+        lmstudio) echo "${LMSTUDIO_API_BASE:-http://host.docker.internal:1234}" ;;
         omlx)     echo "${OMLX_API_BASE:-http://host.docker.internal:8000}/v1" ;;
         *)        echo "" ;;
     esac
@@ -263,22 +263,22 @@ configure_local_endpoints() {
 
     if [[ " ${ENABLED_PROVIDERS[*]} " =~ " ollama " ]]; then
         echo "  ── Ollama ──"
-        OLLAMA_API_BASE=$(pick_with_default "  Endpoint URL" "http://localhost:11434")
-        OLLAMA_MODEL=$(pick_with_default "  Model name (e.g. llama3.1)" "llama3")
+        OLLAMA_API_BASE=$(pick_with_default "  Endpoint URL" "http://host.docker.internal:11434")
+        OLLAMA_MODEL=$(pick_required "  Model name (exact — run 'ollama list')")
         echo ""
     fi
 
     if [[ " ${ENABLED_PROVIDERS[*]} " =~ " llamacpp " ]]; then
         echo "  ── llama.cpp ──"
-        LLAMACPP_API_BASE=$(pick_with_default "  Endpoint URL" "http://localhost:8080")
-        LLAMACPP_MODEL=$(pick_with_default "  Model name (e.g. llama-3.2-3b)" "llama-3.2-3b")
+        LLAMACPP_API_BASE=$(pick_with_default "  Endpoint URL" "http://host.docker.internal:8080")
+        LLAMACPP_MODEL=$(pick_required "  Model name (exact — see server startup output)")
         echo ""
     fi
 
     if [[ " ${ENABLED_PROVIDERS[*]} " =~ " lmstudio " ]]; then
         echo "  ── LM Studio ──"
-        LMSTUDIO_API_BASE=$(pick_with_default "  Endpoint URL" "http://localhost:1234")
-        LMSTUDIO_MODEL=$(pick_with_default "  Model name (e.g. deepseek-coder-v2)" "model")
+        LMSTUDIO_API_BASE=$(pick_with_default "  Endpoint URL" "http://host.docker.internal:1234")
+        LMSTUDIO_MODEL=$(pick_required "  Model name (exact — see loaded model in LM Studio UI)")
         echo ""
     fi
 
@@ -296,9 +296,10 @@ configure_local_endpoints() {
     fi
 
     echo ""
-    echo "  ⚠  If GateMid runs in Docker and Ollama/llama.cpp/oMLX runs on the host,"
-    echo "     use host.docker.internal instead of localhost, e.g.:"
-    echo "     http://host.docker.internal:11434"
+    echo "  ℹ  Endpoint defaults already use host.docker.internal so GateMid (Docker)"
+    echo "     can reach local servers running on the host Mac."
+    echo "     Only switch back to localhost if your local server runs in the same"
+    echo "     Docker network as GateMid, e.g.: http://localhost:11434"
     echo ""
 
     ok "local providers configured"
@@ -659,16 +660,16 @@ ENV
 
     # Local provider endpoint URLs and model names
     if [[ " ${ENABLED_PROVIDERS[*]} " =~ " ollama " ]]; then
-        echo "OLLAMA_API_BASE=${OLLAMA_API_BASE:-http://localhost:11434}" >> .env
-        echo "OLLAMA_MODEL=${OLLAMA_MODEL:-llama3}" >> .env
+        echo "OLLAMA_API_BASE=${OLLAMA_API_BASE:-http://host.docker.internal:11434}" >> .env
+        echo "OLLAMA_MODEL=${OLLAMA_MODEL:-}" >> .env
     fi
     if [[ " ${ENABLED_PROVIDERS[*]} " =~ " llamacpp " ]]; then
-        echo "LLAMACPP_API_BASE=${LLAMACPP_API_BASE:-http://localhost:8080}" >> .env
-        echo "LLAMACPP_MODEL=${LLAMACPP_MODEL:-llama-3.2-3b}" >> .env
+        echo "LLAMACPP_API_BASE=${LLAMACPP_API_BASE:-http://host.docker.internal:8080}" >> .env
+        echo "LLAMACPP_MODEL=${LLAMACPP_MODEL:-}" >> .env
     fi
     if [[ " ${ENABLED_PROVIDERS[*]} " =~ " lmstudio " ]]; then
-        echo "LMSTUDIO_API_BASE=${LMSTUDIO_API_BASE:-http://localhost:1234}" >> .env
-        echo "LMSTUDIO_MODEL=${LMSTUDIO_MODEL:-model}" >> .env
+        echo "LMSTUDIO_API_BASE=${LMSTUDIO_API_BASE:-http://host.docker.internal:1234}" >> .env
+        echo "LMSTUDIO_MODEL=${LMSTUDIO_MODEL:-}" >> .env
     fi
     if [[ " ${ENABLED_PROVIDERS[*]} " =~ " omlx " ]]; then
         echo "OMLX_API_KEY=${OMLX_API_KEY:-sk-no-key}" >> .env
