@@ -587,7 +587,7 @@ Four custom ASGI middlewares are registered on the LiteLLM FastAPI app. Registra
 
 **File:** `proxy/guardrails/api_key_masking.py`
 
-Sanitizes API keys from request/response bodies before any other middleware or logging sees them. Uses 8 ordered regex patterns covering Gemini (`AIzaSy`), Hugging Face (`hf_`), GitHub tokens, AWS access keys, OpenAI/Anthropic (`sk-`), Bearer tokens, and generic 36+ char strings. Preserves key type prefixes while masking the sensitive portion.
+Sanitizes API keys from request bodies before any other middleware or logging sees them. Uses 6 ordered regex patterns covering Gemini (`AIzaSy`), Hugging Face (`hf_`), GitHub tokens, AWS access keys, OpenAI/Anthropic (`sk-`), and Bearer tokens. Preserves key type prefixes while masking the sensitive portion. Response bodies pass through unmodified (output masking removed as redundant).
 
 ### 2. CaptureOriginalQuestionMiddleware
 
@@ -675,7 +675,7 @@ Three headroom patches are applied at startup in `proxy/entrypoint.py`:
 |-------|------|---------|
 | **Entrypoint** | `proxy/entrypoint.py` | Custom startup — registers ASGI middleware, patches Headroom, starts LiteLLM |
 | **Config** | `litellm_config.yaml` | Model definitions, complexity router config, callback registration |
-| **Middleware** | `proxy/guardrails/api_key_masking.py` | API key sanitization (8 regex patterns) |
+| **Middleware** | `proxy/guardrails/api_key_masking.py` | API key sanitization (6 regex patterns) |
 | **Middleware** | `proxy/capture_original.py` | Pre-compression question snapshot |
 | **Middleware** | `proxy/skill_injector.py` | `$trigger` detection and skill injection into system prompt |
 | **Skill Registry** | `proxy/skills/` | Skill markdown files loaded at startup (`ponytail.md`, `caveman.md` + future skills) |

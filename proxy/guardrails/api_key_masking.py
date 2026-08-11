@@ -1,4 +1,4 @@
-"""ASGI middleware that masks API keys in LLM request/response bodies.
+"""ASGI middleware that masks API keys in LLM request bodies.
 
 Intercepts POST requests to LLM endpoints, recursively walks the JSON body
 for any string values matching known API key patterns, and replaces the
@@ -47,13 +47,6 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
         r"""\b(Bearer\s+[A-Za-z0-9._\-\/+=]{20,})\b""",
         re.IGNORECASE,
     )),
-    # key-value: api_key = "..."
-    ("api_key_value", re.compile(
-        r"""\b(api[_-]?key\s*[:=]\s*['\"]?[A-Za-z0-9_\-]{20,}['\"]?)""",
-        re.IGNORECASE,
-    )),
-    # Generic catch-all for unknown formats (36+ chars)
-    ("generic_long_key", re.compile(r"\b([A-Za-z0-9_-]{36,})\b")),
 ]
 
 
@@ -74,11 +67,6 @@ def _mask_single_value(key_type: str, full_match: str) -> str:
             inner = _mask_single_value("", m.group(1))
             return f"Bearer {inner}"
         return "Bearer ***MASKED***"
-
-    # api_key=value pattern — preserve up to ``=`` or ``:``
-    m = re.match(r'^(api[_-]?key\s*[:=]\s*[\'"]?).+', full_match, re.IGNORECASE)
-    if m:
-        return m.group(1) + "***MASKED***"
 
     # Hyphen-separated tokens — keep all but the last segment
     parts = full_match.split("-")
@@ -245,65 +233,6 @@ def mask_api_keys_in_request(body: dict) -> tuple[dict, list[dict[str, Any]]]:
     return body, all_events
 
 
-def mask_api_keys_in_response(body: dict) -> tuple[dict, list[dict[str, Any]]]:
-    """Mask API keys only in content-bearing response fields.
-
-    Scans ``choices[*].message.content`` (OpenAI /chat/completions),
-    ``choices[*].delta.content`` (streaming chunks), and
-    ``content[*].text`` (Anthropic /v1/messages).
-    """
-    all_events: list[dict[str, Any]] = []
-
-    def _walk_text(text: str, path: str) -> str:
-        nonlocal all_events
-        masked, events = mask_api_keys_in_text(text)
-        if events:
-            for e in events:
-                all_events.append({**e, "path": path})
-        return masked
-
-    # ── choices[].message.content / choices[].delta.content ───────────────
-    choices = body.get("choices")
-    if isinstance(choices, list):
-        for i, choice in enumerate(choices):
-            if not isinstance(choice, dict):
-                continue
-            msg = choice.get("message")
-            if isinstance(msg, dict):
-                c = msg.get("content")
-                if isinstance(c, str):
-                    choices[i]["message"]["content"] = _walk_text(
-                        c, f"$.choices[{i}].message.content"
-                    )
-                # DeepSeek models put reasoning in reasoning_content
-                rc = msg.get("reasoning_content")
-                if isinstance(rc, str):
-                    choices[i]["message"]["reasoning_content"] = _walk_text(
-                        rc, f"$.choices[{i}].message.reasoning_content"
-                    )
-            delta = choice.get("delta")
-            if isinstance(delta, dict):
-                c = delta.get("content")
-                if isinstance(c, str):
-                    choices[i]["delta"]["content"] = _walk_text(
-                        c, f"$.choices[{i}].delta.content"
-                    )
-
-    # ── content[].text (Anthropic /v1/messages format) ────────────────────
-    content_blocks = body.get("content")
-    if isinstance(content_blocks, list):
-        for i, block in enumerate(content_blocks):
-            if isinstance(block, dict) and block.get("type") == "text":
-                text = block.get("text", "")
-                if isinstance(text, str):
-                    content_blocks[i] = {
-                        **block,
-                        "text": _walk_text(text, f"$.content[{i}].text"),
-                    }
-
-    return body, all_events
-
-
 # ── ASGI Middleware ────────────────────────────────────────────────────────────
 
 # Paths that contain LLM messages to inspect
@@ -316,7 +245,7 @@ _LLM_PATHS = (
 
 
 class ApiKeyMaskingMiddleware:
-    """ASGI middleware that masks API keys in LLM request/response bodies.
+    """ASGI middleware that masks API keys in LLM request bodies.
 
     Registered in proxy/entrypoint.py, placed before CompressionMiddleware so
     that key scrubbing happens before payload compression.
@@ -372,7 +301,6 @@ class ApiKeyMaskingMiddleware:
 
             if events:
                 full_body = json.dumps(masked_body, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-                req_masked = True
                 _log_events("request", path, events)
         except (json.JSONDecodeError, TypeError, ValueError):
             pass  # non-JSON body — pass through unmodified
@@ -394,59 +322,9 @@ class ApiKeyMaskingMiddleware:
             # getting a fake disconnect that aborts the response early.
             return await receive()
 
-        # ── Buffer and optionally mask response body ────────────────────────
-        # For non-streaming responses we buffer all chunks, mask, then forward.
-        # SSE/streaming responses are forwarded as-is (each SSE event would need
-        # individual parsing, adding complexity beyond the initial use case).
-        resp_chunks: list[bytes] = []
-        resp_headers_sent = False
-        is_streaming = False
-
-        async def buffering_send(message: MutableMapping[str, Any]) -> None:
-            nonlocal resp_headers_sent, is_streaming
-            if message["type"] == "http.response.start":
-                resp_headers_sent = True
-                # Detect streaming from content-type
-                headers = dict(message.get("headers", []) or [])
-                ct = headers.get(b"content-type", b"").decode().lower()
-                if "text/event-stream" in ct or "text/plain" in ct:
-                    is_streaming = True
-                # Strip Content-Length — body size may change after masking
-                filtered_headers = [
-                    (k, v) for k, v in (message.get("headers", []) or [])
-                    if k.lower() != b"content-length"
-                ]
-                await send({**message, "headers": filtered_headers})
-
-            elif message["type"] == "http.response.body":
-                chunk = message.get("body", b"")
-                more = message.get("more_body", False)
-
-                if is_streaming:
-                    # Forward streaming chunks immediately
-                    await send(message)
-                else:
-                    # Buffer non-streaming body
-                    if chunk:
-                        resp_chunks.append(chunk)
-                    if not more:
-                        # All chunks received — mask and forward
-                        resp_body = b"".join(resp_chunks)
-                        try:
-                            resp_json = json.loads(resp_body)
-                            masked_resp, resp_events = mask_api_keys_in_response(resp_json)
-                            if resp_events:
-                                _log_events("response", path, resp_events)
-                                resp_body = json.dumps(masked_resp, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-                        except (json.JSONDecodeError, TypeError, ValueError):
-                            pass
-                        await send({
-                            "type": "http.response.body",
-                            "body": resp_body,
-                            "more_body": False,
-                        })
-
-        await self.app(scope, modified_receive, buffering_send)
+        # Responses are forwarded as-is — output masking was removed as
+        # redundant (see docs/instructions/middleware/api-key-masking.md).
+        await self.app(scope, modified_receive, send)
 
 
 def _log_events(

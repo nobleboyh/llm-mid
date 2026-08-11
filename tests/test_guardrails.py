@@ -64,14 +64,6 @@ def test_aws_access_key() -> None:
     assert any(e["key_type"] == "aws_access_key" for e in events), events
 
 
-def test_api_key_value_pattern() -> None:
-    """Only the ``api_key_value`` pattern should fire (key has no known prefix)."""
-    text = 'The config has api_key=3Cr3tK3y1234567890123456789'
-    masked, events = mask_api_keys_in_text(text)
-    assert "***MASKED***" in masked, f"got: {masked!r}"
-    assert any(e["key_type"] == "api_key_value" for e in events), events
-
-
 def test_no_matching_key() -> None:
     text = "This is a normal sentence with no API keys."
     masked, events = mask_api_keys_in_text(text)

@@ -252,7 +252,7 @@ from guardrails.api_key_masking import ApiKeyMaskingMiddleware
 app.add_middleware(ApiKeyMaskingMiddleware)
 
 logger.info("ApiKeyMaskingMiddleware registered — masking API keys in "
-            "request/response bodies")
+            "request bodies")
 
 # 2. Start the LiteLLM proxy server normally via its Click CLI
 from litellm.proxy.proxy_cli import run_server

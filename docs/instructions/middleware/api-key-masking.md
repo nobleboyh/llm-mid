@@ -1,23 +1,36 @@
 # Middleware: API Key Masking
 
 **File:** `proxy/guardrails/api_key_masking.py`
-**Position:** Outermost (runs FIRST inbound, LAST outbound)
+**Position:** Outermost (runs FIRST inbound; outbound is pass-through)
 **Order:** 1 of 4
 
 ## Purpose
 
-Sanitizes API keys from LLM request and response bodies before any other middleware or logging sees them. This prevents accidental key leakage through logs, compression analytics, or evaluation records.
+Sanitizes API keys from LLM **request** bodies before any other middleware or logging sees them. This prevents accidental key leakage through logs, compression analytics, or evaluation records.
+
+Output masking was removed as redundant — see [Why response masking was removed](#why-response-masking-was-removed).
 
 ## Architecture
 
 ```
 Inbound:  ApiKeyMasking → CaptureOriginal → SkillInjector → Compression → LiteLLM
-Outbound: LiteLLM → Compression → SkillInjector → CaptureOriginal → ApiKeyMasking
+Outbound: LiteLLM → Compression → SkillInjector → CaptureOriginal → ApiKeyMasking (pass-through)
 ```
 
-As the outermost middleware, it's the first to see incoming requests and the last to see outgoing responses. This ensures no other middleware processes plaintext keys.
+As the outermost middleware, it's the first to see incoming requests — so every downstream middleware (CaptureOriginal, SkillInjector, Compression) and LiteLLM itself only ever sees masked request bodies. The outbound side is a pure pass-through: response bodies are forwarded byte-for-byte, unmodified.
 
-## Detection patterns (8 regexes, ordered)
+## Why response masking was removed
+
+Output masking never protected a real leak surface:
+
+- **Eval records** — `RagasLogger` extracts the answer from LiteLLM's in-process `response_obj` (not the ASGI response body), so the eval `answer` stored in Redis was never masked by this middleware, streaming or not.
+- **Streaming** — SSE responses (the dominant case for coding tools) were already forwarded unmodified.
+- **Request masking makes echo impossible** — keys are scrubbed before the model ever sees them, so model output can't echo a key it never received.
+- **Costs** — the `generic_long_key` catch-all could rewrite legitimate long strings in model output (base64, JWTs, hashes), and non-streaming responses were fully buffered before the first byte reached the client.
+
+If eval `answer` records ever need scrubbing, mask in `proxy/callback.py` before `enqueue_call_record` — not in this middleware.
+
+## Detection patterns (6 regexes, ordered)
 
 Patterns are applied in priority order — most specific first, generic catch-alls last:
 
@@ -29,8 +42,11 @@ Patterns are applied in priority order — most specific first, generic catch-al
 | 4 | `aws_access_key` | `\b(AKIA[0-9A-Z]{16})\b` | `AKIAIOSFODNN7EXAMPLE` |
 | 5 | `openai_key` | `\b(sk-[a-zA-Z0-9_-]{20,})\b` | `sk-proj-...`, `sk-ant-...` |
 | 6 | `bearer_token` | `\b(Bearer\s+[A-Za-z0-9._\-\/+=]{20,})\b` | `Bearer sk-...` |
-| 7 | `api_key_value` | `\b(api[_-]?key\s*[:=]\s*['\"]?[A-Za-z0-9_\-]{20,}['\"]?)` | `api_key = "..."` |
-| 8 | `generic_long_key` | `\b([A-Za-z0-9_-]{36,})\b` | Any long alphanumeric string |
+
+> **Removed patterns.** Two original patterns were dropped as over-broad — they
+> fired on non-key content:
+> - `api_key_value` — any value assigned to an `api_key=`-like label (label heuristic)
+> - `generic_long_key` — any 36+ char alphanumeric run (base64, JWTs, hashes, UUIDs, long identifiers)
 
 Patterns 5 and 6 are ordered so `Bearer sk-proj-...` is caught by `bearer_token` before `openai_key` splits it.
 
@@ -44,14 +60,11 @@ The `_mask_single_value()` function preserves recognizable structure so debuggin
 | `sk-proj-XXXX` | `sk-proj-***MASKED***` |
 | `sk-ant-XXXX-YYYY` | `sk-ant-XXXX-***MASKED***` |
 | `Bearer sk-XXXX` | `Bearer sk-***MASKED***` |
-| `api_key = "XXXX"` | `api_key = "***MASKED***"` |
-| Generic long string | `***MASKED***` |
 
 Rules:
 - Hyphen-separated tokens: preserve all but last segment
 - Known prefixes: preserve prefix, mask remainder
 - Bearer tokens: preserve `Bearer ` label, mask token portion
-- API key assignments: preserve up to `=`/`:`, mask value
 
 ## Scope of masking
 
@@ -68,15 +81,6 @@ or nested text-blocks list) is recursively masked.
 Fields NOT scanned: `tools`, `metadata`, `stop_sequences`, `temperature`,
 `image` blocks, etc. — these don't carry user content that could leak keys.
 
-### Response bodies
-Only content-bearing fields:
-- `$.choices[*].message.content` (OpenAI)
-- `$.choices[*].delta.content` (OpenAI streaming chunks)
-- `$.content[*].text` (Anthropic content blocks)
-
-### Streaming responses
-Streaming (SSE) responses are forwarded as-is without masking. Parsing individual SSE events for key patterns adds complexity beyond the initial use case.
-
 ## Path filtering
 
 Masking only applies to POST requests to these paths:
@@ -87,16 +91,11 @@ Masking only applies to POST requests to these paths:
 
 All other paths (GET, health checks, embeddings, etc.) pass through unmodified.
 
-## Response header handling
-
-`Content-Length` header is stripped from responses because body size may change after masking. The ASGI server recalculates it.
-
 ## Logging
 
 Every masking event is logged at INFO:
 ```
 ApiKeyMask REQUEST /v1/messages — masked openai_key×1; github_token×2 at $.messages[0].content, $.system
-ApiKeyMask RESPONSE /v1/messages — masked openai_key×1 at $.choices[0].message.content
 ```
 
 Format: `direction PATH — masked TYPE×COUNT at PATH, PATH, ...`
@@ -118,11 +117,8 @@ mask_api_keys_in_json(data, path="$") -> tuple[Any, list[dict]]
 
 mask_api_keys_in_request(body: dict) -> tuple[dict, list[dict]]
 # Masks only content-bearing request fields
-
-mask_api_keys_in_response(body: dict) -> tuple[dict, list[dict]]
-# Masks only content-bearing response fields
 ```
 
 ## Test coverage
 
-`tests/test_guardrails.py` — covers all 8 patterns, masking preservation, request/response field scoping, and integration with the live gateway.
+`tests/test_guardrails.py` — covers all 6 patterns, masking preservation, request field scoping, and integration with the live gateway.

@@ -184,7 +184,7 @@ Gemini / DeepSeek / Any LLM
 
 **What it does:**
 - Custom `ApiKeyMaskingMiddleware` intercepts every request *before* it touches the LLM
-- 8 regex patterns covering: Gemini, Hugging Face, GitHub tokens, AWS access keys, OpenAI/Anthropic `sk-` keys, Bearer tokens, and generic 36+ char secrets
+- 6 regex patterns covering: Gemini, Hugging Face, GitHub tokens, AWS access keys, OpenAI/Anthropic `sk-` keys, and Bearer tokens
 - Preserves key type prefix, masks the sensitive portion
 
 > 📸 *[IMAGE PLACEHOLDER — demo screenshot of masked API key in request log]*
