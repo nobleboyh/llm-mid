@@ -15,11 +15,14 @@ def gateway_url():
 @pytest.fixture(scope="session")
 def gateway_ready(gateway_url):
     """Wait for the gateway to be healthy before running tests."""
+    # The gateway config sets master_key, so /health requires auth — use the
+    # same key the test clients send (sk-local-dev-key) or health always 500s.
     client = httpx.Client(timeout=5.0)
+    headers = {"Authorization": "Bearer sk-local-dev-key"}
     deadline = time.time() + 30
     while time.time() < deadline:
         try:
-            resp = client.get(f"{gateway_url}/health")
+            resp = client.get(f"{gateway_url}/health", headers=headers)
             if resp.status_code == 200:
                 return True
         except httpx.ConnectError:
